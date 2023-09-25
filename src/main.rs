@@ -123,20 +123,23 @@ fn get_previous_node(node_id: u32) -> Node {
     previous_node
 }
 
-
-#[get("/")]
-async fn index() -> impl Responder {
-    HttpResponse::Ok().body("Hello, world!")
+fn fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
+    let (start_id, end_id) = if previous_id < current_id {
+        (previous_id + 1, current_id)
+    } else {
+        (current_id + 1, previous_id)
+    };
+    for key_id in start_id..=end_id {
+        node.hashmap.insert(key_id, format!("value_{}", key_id));
+    }
 }
 
-// #[put("/item/<key>")]
-// async fn item_put(key: u32, node: web::Data<Node>) -> impl Responder {
 
-//     let mut node = &mut *node.lock().unwrap();
-//     node.hashmap.insert(key, "test".to_string());
-//     HttpResponse::Ok().body("node, {}", node)
-    
-// }
+fn get_local_ip() ->Option<IpAddr>{
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();
+    socket.connect("8.8.8.8:80").ok()?;
+    socket.local_addr().ok()?.ip().into()
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -165,12 +168,15 @@ async fn main() -> std::io::Result<()> {
     let previous_node = get_previous_node(node_id);
     println!("previous_node: {}", previous_node);
 
-    node.hashmap.insert(1, "test".to_string());
+    fill_hashmap(&mut node, previous_node.id, node_id);
     println!("hashmap: {:?}", node.hashmap);
 
-    HttpServer::new(|| {
+    HttpServer::new(move || {
         App::new()
+        .data(Mutex::new(node.clone()))
+        .service(item_get)
         .service(index)
+        .service(item_put)
     })
     .bind("0.0.0.0:65000")?
     .run()
@@ -181,9 +187,40 @@ async fn main() -> std::io::Result<()> {
 
 }
 
-fn get_local_ip() ->Option<IpAddr>{
-    let socket = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();
-    socket.connect("8.8.8.8:80").ok()?;
-    socket.local_addr().ok()?.ip().into()
+
+
+#[get("/")]
+async fn index() -> impl Responder {
+println!("Received GET request");
+HttpResponse::Ok().body("Hello, world!")
 }
 
+#[put("/item/{key}")]
+async fn item_put(web::Path(key): web::Path<u32>, data:String  ,node: web::Data<Mutex<Node>>) -> impl Responder {
+
+    println!("data {:?}", data);
+    let mut node = node.lock().unwrap();
+    if node.hashmap.contains_key(&key) {
+        
+        // node.hashmap.insert(key, data);
+        HttpResponse::Ok().body(format!("Item {:?} updated", node.hashmap))
+    } 
+    else {
+        HttpResponse::Ok().body(format!("Item {:?} not found", node.hashmap))
+    }
+
+}
+
+#[get("/item/{key}")]
+async fn item_get(web::Path(key): web::Path<u32>, node: web::Data<Mutex<Node>>) -> impl Responder {
+
+let node = node.lock().unwrap();
+
+if let Some(value) = node.hashmap.get(&key) {
+    HttpResponse::Ok().body(format!("Item {:?} found", value))
+} else {
+    HttpResponse::Ok().body(format!("Item {:?} not found", node.hashmap))
+}
+
+
+}
