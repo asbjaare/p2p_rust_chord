@@ -8,17 +8,24 @@ use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use actix_web::{get, put, web, App, HttpResponse, HttpServer, Responder};
 use std::sync::{Arc, Mutex};
+use serde::{Serialize, Deserialize};
 
 const KEY_SIZE: u32 = 4;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 struct Node {
     id: u32,
     ip: String,
     hashmap: HashMap<u32, String>,
-
 }
+
+#[derive(Serialize,Debug, Clone, Eq, PartialEq)]
+struct Neighbors {
+    prev: String,
+    next: String
+}
+
 
 impl Node {
     fn new(id: u32, ip: String) -> Self {
@@ -112,25 +119,37 @@ fn get_previous_node(node_id: u32) -> Node {
     let mut sorted_nodes: Vec<Node> = nodes.into_iter().collect();
     sorted_nodes.sort_by_key(|node| node.id);
 
-    let mut previous_node = sorted_nodes[0].clone();
+    println!("sorted_nodes: {:?}", sorted_nodes);
 
+    let mut previous_node = sorted_nodes[sorted_nodes.len() - 1].clone();
     for node in sorted_nodes {
         if node.id < node_id {
             previous_node = node;
         }
     }
 
+  
+        
+    
+
     previous_node
 }
 
 fn fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
+   
     let (start_id, end_id) = if previous_id < current_id {
         (previous_id + 1, current_id)
     } else {
-        (current_id + 1, previous_id)
+        (previous_id + 1, CLUSTER_SIZE)
     };
     for key_id in start_id..=end_id {
         node.hashmap.insert(key_id, format!("value_{}", key_id));
+    }
+
+    if previous_id > current_id {
+        for key_id in 0..=current_id  {
+            node.hashmap.insert(key_id, format!("value_{}", key_id));
+        }
     }
 }
 
@@ -170,12 +189,19 @@ async fn main() -> std::io::Result<()> {
 
     fill_hashmap(&mut node, previous_node.id, node_id);
     println!("hashmap: {:?}", node.hashmap);
+    
+    let node_data = web::Data::new(Mutex::new(node));
+    let previous_node_data = web::Data::new(Mutex::new(previous_node));
+    let finger_table_data = web::Data::new(Mutex::new(finger_table));
+    
 
     HttpServer::new(move || {
         App::new()
-        .data(Mutex::new(node.clone()))
-        .service(item_get)
+        .app_data(node_data.clone())
+        .app_data(previous_node_data.clone())
+        .app_data(finger_table_data.clone())
         .service(index)
+        .service(item_get)
         .service(item_put)
     })
     .bind("0.0.0.0:65000")?
@@ -189,21 +215,29 @@ async fn main() -> std::io::Result<()> {
 
 
 
-#[get("/")]
-async fn index() -> impl Responder {
-println!("Received GET request");
-HttpResponse::Ok().body("Hello, world!")
+#[get("/storage/neighbors")]
+async fn index(finger_table: web::Data<Mutex<Vec<(u32, Node)>>>, prev_node: web::Data<Mutex<Node>>  ) -> impl Responder {
+    println!("Received GET request"); 
+    let finger_table = finger_table.lock().unwrap();
+    let prev_node = prev_node.lock().unwrap();
+    let neightbors = Neighbors {
+        prev: prev_node.ip.to_string(),
+        next: finger_table[0].1.ip.clone().to_string(),
+    };
+    let ip_addr = vec![neightbors.prev, neightbors.next];
+    HttpResponse::Ok().json(ip_addr)
 }
 
-#[put("/item/{key}")]
-async fn item_put(web::Path(key): web::Path<u32>, data:String  ,node: web::Data<Mutex<Node>>) -> impl Responder {
+#[put("/storage/{key}")]
+async fn item_put(web::Path(key): web::Path<u32>, data:String  ,node_data: web::Data<Mutex<Node>>) -> impl Responder {
 
     println!("data {:?}", data);
-    let mut node = node.lock().unwrap();
+    let mut node = node_data.lock().unwrap();
     if node.hashmap.contains_key(&key) {
         
-        // node.hashmap.insert(key, data);
+        node.hashmap.insert(key, data);
         HttpResponse::Ok().body(format!("Item {:?} updated", node.hashmap))
+        
     } 
     else {
         HttpResponse::Ok().body(format!("Item {:?} not found", node.hashmap))
@@ -211,15 +245,15 @@ async fn item_put(web::Path(key): web::Path<u32>, data:String  ,node: web::Data<
 
 }
 
-#[get("/item/{key}")]
-async fn item_get(web::Path(key): web::Path<u32>, node: web::Data<Mutex<Node>>) -> impl Responder {
+#[get("/storage/{key}")]
+async fn item_get(web::Path(key): web::Path<u32>, node_data: web::Data<Mutex<Node>>) -> impl Responder {
 
-let node = node.lock().unwrap();
+let node = node_data.lock().unwrap();
 
 if let Some(value) = node.hashmap.get(&key) {
     HttpResponse::Ok().body(format!("Item {:?} found", value))
 } else {
-    HttpResponse::Ok().body(format!("Item {:?} not found", node.hashmap))
+    HttpResponse::NotFound().body(format!("Item {:?} not found", key))
 }
 
 
