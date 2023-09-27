@@ -5,28 +5,29 @@ use std::env;
 use std::fmt;
 use std::fs;
 use std::hash::{Hash, Hasher};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::IpAddr;
 use actix_web::{get, put, web, App, HttpResponse, HttpServer, Responder};
-use std::sync::{Arc, Mutex};
-use serde::{Serialize, Deserialize};
+use std::sync::Mutex;
+use serde::Serialize;
 
 const KEY_SIZE: u32 = 4;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
 
+// Structure to represent a node in the cluster, with its id, ip and hashmap
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 struct Node {
     id: u32,
     ip: String,
     hashmap: HashMap<u32, String>,
 }
-
+// Structure to represent the neighbors of a node
 #[derive(Serialize,Debug, Clone, Eq, PartialEq)]
 struct Neighbors {
     prev: String,
     next: String
 }
 
-
+// Implementation of the Node structure
 impl Node {
     fn new(id: u32, ip: String) -> Self {
         Node { id, ip, hashmap: HashMap::new() }
@@ -39,15 +40,17 @@ impl Hash for Node {
     }
 }
 
+// Implementation of the Display trait for the Node structure
 impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Node {{ id: {}, ip: {} }}", self.id, self.ip)
     }
 }
 
-fn hash_function(ip: &IpAddr) -> u32 {
+// consistant hash function to map the ip address to a node id with SHA1
+fn hash_function(ip: String) -> u32 {
     let mut hasher = Sha1::new();
-    hasher.update(ip.to_string());
+    hasher.update(ip);
     let result = hasher.finalize();
     let bytes = result.as_slice();
     let mut buf = [0u8; 4];
@@ -57,13 +60,17 @@ fn hash_function(ip: &IpAddr) -> u32 {
   
 }
 
+// populate the fingertable of a node
 fn populate_fingertable(node_id: u32) -> Vec<(u32, Node)> {
     let mut nodes: HashSet<Node> = HashSet::new();
     let mut finger_table: Vec<(u32, Node)> = Vec::new();
 
+    // read the ip.txt file to get the ip addresses of the nodes
     if let Ok(lines) = fs::read_to_string("ip.txt") {
         
+        // parse each line to get the id and ip address of the node
         for line in lines.lines() {
+            // if the line is not empty
             if let Some((id, ip)) = parse_line(line) {
                 let node = Node::new(id, ip.to_string());
                 
@@ -72,13 +79,15 @@ fn populate_fingertable(node_id: u32) -> Vec<(u32, Node)> {
         }
     
         
-     
+        // sort the nodes by id 
         let mut sorted_nodes: Vec<Node> = nodes.into_iter().collect();
         sorted_nodes.sort_by_key(|node| node.id);
 
+        // populate the fingertable of the node
         for i in 0..KEY_SIZE {
             let start = (node_id + 2u32.pow(i)) % CLUSTER_SIZE;
 
+            // find the successor of the node
             let successor = sorted_nodes
                 .iter()
                 .find(|&node| node.id >= start)
@@ -92,21 +101,24 @@ fn populate_fingertable(node_id: u32) -> Vec<(u32, Node)> {
     finger_table
 }
 
+// parse a line of the ip.txt file to get the id and ip address of a node
 fn parse_line(line: &str) -> Option<(u32, &str)> {
     let parts: Vec<&str> = line.split_whitespace().collect();
   
     if parts.len() == 3 {
         let ip = parts[2];
-        let id = hash_function(&ip.parse::<IpAddr>().unwrap());
+        let id = hash_function(ip.to_string());
         Some((id, ip))
     } else {
         None
     }
 }
 
+// get the previous node of the current node in the cluster
 fn get_previous_node(node_id: u32) -> Node {
     let mut nodes: HashSet<Node> = HashSet::new();
 
+    // read the ip.txt file to get the ip addresses of the nodes
     if let Ok(lines) = fs::read_to_string("ip.txt") {
         for line in lines.lines() {
             if let Some((id, ip)) = parse_line(line) {
@@ -116,12 +128,15 @@ fn get_previous_node(node_id: u32) -> Node {
         }
     }
 
+    // sort the nodes by id
     let mut sorted_nodes: Vec<Node> = nodes.into_iter().collect();
     sorted_nodes.sort_by_key(|node| node.id);
 
-    println!("sorted_nodes: {:?}", sorted_nodes);
-
+    
+    // set the previous node as the last node in the cluster
     let mut previous_node = sorted_nodes[sorted_nodes.len() - 1].clone();
+
+    // find the previous node of the current node by iterating over the sorted nodes
     for node in sorted_nodes {
         if node.id < node_id {
             previous_node = node;
@@ -129,14 +144,15 @@ fn get_previous_node(node_id: u32) -> Node {
     }
 
   
-        
     
-
     previous_node
 }
 
+// fill the hashmap of a node with the keys and values
 fn fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
    
+   // if the previous id is less than the current id, fill the hashmap with the keys between the previous id and the current id. 
+   // else fill the hashmap with the keys between the previous id and the cluster size, and then between 0 and the current id
     let (start_id, end_id) = if previous_id < current_id {
         (previous_id + 1, current_id)
     } else {
@@ -153,12 +169,22 @@ fn fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
     }
 }
 
-
+// get the local ip address of the node
 fn get_local_ip() ->Option<IpAddr>{
     let socket = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();
     socket.connect("8.8.8.8:80").ok()?;
     socket.local_addr().ok()?.ip().into()
 }
+
+// fn find_succesor(key: u32, Finger_table: Vec<(u32, Node)> ) -> String{
+//     let mut succesor = String::new();
+
+    
+
+
+
+//     succesor
+// }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -171,30 +197,46 @@ async fn main() -> std::io::Result<()> {
 
   
     
-
+    // get the local ip address of the node
     let local_ip: IpAddr = get_local_ip().unwrap();
 
 
-    let node_id = hash_function(&local_ip);
+    // get the node id of the node
+    let node_id = hash_function(local_ip.to_string());
 
+    // format the ip address and port of the node
+    let ip_and_port = format!("{}:{}", local_ip.to_string(), 55000);
 
-    let mut node = Node::new(node_id, local_ip.to_string());
-    println!("node: {}", node);
+    // create a new node with the node id and ip address with port number
+    let mut node = Node::new(node_id, ip_and_port);
+    
+    // populate the fingertable of the node
+    let mut  finger_table = populate_fingertable(node_id);
+    
+    // get the previous node of the current node in the cluster
+    let mut previous_node = get_previous_node(node_id);
 
-    let finger_table = populate_fingertable(node_id);
-    println!("finger_table: {:?}", finger_table);
+    // format the ip address and port of the previous node
+    previous_node.ip = format!("{}:{}", previous_node.ip, 55000);
 
-    let previous_node = get_previous_node(node_id);
-    println!("previous_node: {}", previous_node);
+    // format the ip address and port of the nodes in the fingertable
+    for finger in finger_table.iter_mut() {
+        finger.1.ip = format!("{}:{}", finger.1.ip, 55000);
+    }
+    
+    println!("Node: {}", node);
+    println!("Previous node: {}", previous_node);
+    println!("Finger table: {:?}", finger_table);
+
+    
 
     fill_hashmap(&mut node, previous_node.id, node_id);
-    println!("hashmap: {:?}", node.hashmap);
     
     let node_data = web::Data::new(Mutex::new(node));
     let previous_node_data = web::Data::new(Mutex::new(previous_node));
     let finger_table_data = web::Data::new(Mutex::new(finger_table));
     
-
+    println!("Server starting at http:// {}", local_ip.to_string());
     HttpServer::new(move || {
         App::new()
         .app_data(node_data.clone())
@@ -204,7 +246,7 @@ async fn main() -> std::io::Result<()> {
         .service(item_get)
         .service(item_put)
     })
-    .bind("0.0.0.0:65000")?
+    .bind("0.0.0.0:55000")?
     .run()
     .await
   
@@ -229,13 +271,15 @@ async fn index(finger_table: web::Data<Mutex<Vec<(u32, Node)>>>, prev_node: web:
 }
 
 #[put("/storage/{key}")]
-async fn item_put(web::Path(key): web::Path<u32>, data:String  ,node_data: web::Data<Mutex<Node>>) -> impl Responder {
+async fn item_put(web::Path(key): web::Path<String>, data:String  ,node_data: web::Data<Mutex<Node>>) -> impl Responder {
 
-    println!("data {:?}", data);
+    let hashed_key = hash_function(key);
+    println!("Received PUT request for key: {}", hashed_key);
+
     let mut node = node_data.lock().unwrap();
-    if node.hashmap.contains_key(&key) {
+    if node.hashmap.contains_key(&hashed_key) {
         
-        node.hashmap.insert(key, data);
+        node.hashmap.insert(hashed_key, data);
         HttpResponse::Ok().body(format!("Item {:?} updated", node.hashmap))
         
     } 
