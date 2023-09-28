@@ -176,15 +176,31 @@ fn get_local_ip() ->Option<IpAddr>{
     socket.local_addr().ok()?.ip().into()
 }
 
-// fn find_succesor(key: u32, Finger_table: Vec<(u32, Node)> ) -> String{
-//     let mut succesor = String::new();
+//Function to find next succesor if the current node does not have the key. (Under construction)
+fn find_succesor(key: u32, Finger_table: Vec<(u32, Node)> ) -> String{
+    let mut succesor = String::new();
 
-    
+    for finger in Finger_table.iter() {
+        if finger.0 == key {
+            succesor = finger.1.ip.clone();
+        }
+    }
+
+    if succesor.is_empty() {
+
+        for finger in Finger_table.iter(){
+            if finger.0 > key {
+                succesor = finger.1.ip.clone();
+                break;
+            }
+       
+        }
+    }
 
 
 
-//     succesor
-// }
+    succesor
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -271,9 +287,10 @@ async fn index(finger_table: web::Data<Mutex<Vec<(u32, Node)>>>, prev_node: web:
 }
 
 #[put("/storage/{key}")]
-async fn item_put(web::Path(key): web::Path<String>, data:String  ,node_data: web::Data<Mutex<Node>>) -> impl Responder {
+async fn item_put(web::Path(key): web::Path<String>, data:String  ,node_data: web::Data<Mutex<Node>>, finger_table: web::Data<Mutex<Vec<(u32, Node)>>>) -> impl Responder {
 
-    let hashed_key = hash_function(key);
+    let hash_ref = &key;
+    let hashed_key = hash_function(hash_ref.to_string());
     println!("Received PUT request for key: {}", hashed_key);
 
     let mut node = node_data.lock().unwrap();
@@ -284,7 +301,17 @@ async fn item_put(web::Path(key): web::Path<String>, data:String  ,node_data: we
         
     } 
     else {
-        HttpResponse::Ok().body(format!("Item {:?} not found", node.hashmap))
+        
+        //Sends API call to succesor. (Under construction)
+        let succesor = find_succesor(hashed_key, finger_table.lock().unwrap().clone());
+
+        let url = format!("http://{}/storage/{}", succesor, key);
+        let client = reqwest::Client::new();
+        let res = client.put(&url).body(data).send().await;
+        println!("Response: {:?}", res);
+
+
+        HttpResponse::Ok().body(format!("Item {:?} inserted", node.hashmap))
     }
 
 }
