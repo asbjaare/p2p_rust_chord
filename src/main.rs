@@ -8,21 +8,22 @@ use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use actix_web::{get, put, web, App, HttpResponse, HttpServer, Responder};
 use std::sync::Mutex;
-use serde::Serialize;
+use serde_derive::Serialize;
+use actix_web::rt::System;
 
 const KEY_SIZE: u32 = 4;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
 
 // Structure to represent a node in the cluster, with its id, ip and hashmap
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
-struct Node {
+pub struct Node {
     id: u32,
     ip: String,
     hashmap: HashMap<u32, String>,
 }
 // Structure to represent the neighbors of a node
 #[derive(Serialize,Debug, Clone, Eq, PartialEq)]
-struct Neighbors {
+pub struct Neighbors {
     prev: String,
     next: String
 }
@@ -61,15 +62,18 @@ fn hash_function(ip: String) -> u32 {
 }
 
 // populate the fingertable of a node
-fn populate_fingertable(node_id: u32) -> Vec<(u32, Node)> {
+fn populate_fingertable(node_id: u32, number_of_nodes: u32) -> Vec<(u32, Node)> {
     let mut nodes: HashSet<Node> = HashSet::new();
     let mut finger_table: Vec<(u32, Node)> = Vec::new();
+  
 
     // read the ip.txt file to get the ip addresses of the nodes
     if let Ok(lines) = fs::read_to_string("ip.txt") {
         
+        let lines_iter  = lines.lines().take(number_of_nodes as usize);
+
         // parse each line to get the id and ip address of the node
-        for line in lines.lines() {
+        for line in lines_iter {
             // if the line is not empty
             if let Some((id, ip)) = parse_line(line) {
                 let node = Node::new(id, ip.to_string());
@@ -82,6 +86,8 @@ fn populate_fingertable(node_id: u32) -> Vec<(u32, Node)> {
         // sort the nodes by id 
         let mut sorted_nodes: Vec<Node> = nodes.into_iter().collect();
         sorted_nodes.sort_by_key(|node| node.id);
+
+        // println!("Sorted nodes: {:?}", sorted_nodes);
 
         // populate the fingertable of the node
         for i in 0..KEY_SIZE {
@@ -115,12 +121,15 @@ fn parse_line(line: &str) -> Option<(u32, &str)> {
 }
 
 // get the previous node of the current node in the cluster
-fn get_previous_node(node_id: u32) -> Node {
+fn get_previous_node(node_id: u32, number_of_nodes: u32) -> Node {
     let mut nodes: HashSet<Node> = HashSet::new();
 
     // read the ip.txt file to get the ip addresses of the nodes
     if let Ok(lines) = fs::read_to_string("ip.txt") {
-        for line in lines.lines() {
+
+        let lines_iter  = lines.lines().take(number_of_nodes as usize);
+
+        for line in lines_iter {
             if let Some((id, ip)) = parse_line(line) {
                 let node = Node::new(id, ip.to_string());
                 nodes.insert(node);
@@ -177,26 +186,33 @@ fn get_local_ip() ->Option<IpAddr>{
 }
 
 //Function to find next succesor if the current node does not have the key. (Under construction)
-fn find_succesor(key: u32, Finger_table: Vec<(u32, Node)> ) -> String{
+async fn find_succesor(key: u32, finger_table: Vec<(u32, Node)> ) -> String{
     let mut succesor = String::new();
 
-    for finger in Finger_table.iter() {
+    // println!("Finger table: {:?}", finger_table);
+
+    for finger in finger_table.iter() {
         if finger.0 == key {
             succesor = finger.1.ip.clone();
         }
     }
 
+    
     if succesor.is_empty() {
 
-        for finger in Finger_table.iter(){
+        for finger in finger_table.iter(){
             if finger.0 > key {
                 succesor = finger.1.ip.clone();
                 break;
             }
+            else {
+                succesor = finger_table[0].1.ip.clone();
+            }
        
         }
     }
-
+    
+    println!("Succesor: {}", succesor);
 
 
     succesor
@@ -211,7 +227,17 @@ async fn main() -> std::io::Result<()> {
     }
     pretty_env_logger::init();
 
+
+
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() != 2 {
+        println!("Provde number of nodes as argument");
+        std::process::exit(1);
+    }
   
+    let num_nodes: u32 = args[1].parse().unwrap();
+
     
     // get the local ip address of the node
     let local_ip: IpAddr = get_local_ip().unwrap();
@@ -227,32 +253,36 @@ async fn main() -> std::io::Result<()> {
     let mut node = Node::new(node_id, ip_and_port);
     
     // populate the fingertable of the node
-    let mut  finger_table = populate_fingertable(node_id);
+    let mut  finger_table = populate_fingertable(node_id, num_nodes);
     
     // get the previous node of the current node in the cluster
-    let mut previous_node = get_previous_node(node_id);
+    let mut previous_node = get_previous_node(node_id, num_nodes);
 
     // format the ip address and port of the previous node
     previous_node.ip = format!("{}:{}", previous_node.ip, 55000);
-
+    
     // format the ip address and port of the nodes in the fingertable
     for finger in finger_table.iter_mut() {
         finger.1.ip = format!("{}:{}", finger.1.ip, 55000);
     }
     
-    println!("Node: {}", node);
-    println!("Previous node: {}", previous_node);
-    println!("Finger table: {:?}", finger_table);
-
+    // println!("Node: {}", node);
+    // println!("Previous node: {}", previous_node);
+    // println!("Finger table: {:?}", finger_table);
     
-
+    
+    
     fill_hashmap(&mut node, previous_node.id, node_id);
+    // println!("hashmap: {:?}", node.hashmap);
     
     let node_data = web::Data::new(Mutex::new(node));
     let previous_node_data = web::Data::new(Mutex::new(previous_node));
     let finger_table_data = web::Data::new(Mutex::new(finger_table));
     
     println!("Server starting at http:// {}", local_ip.to_string());
+
+
+
     HttpServer::new(move || {
         App::new()
         .app_data(node_data.clone())
@@ -264,8 +294,9 @@ async fn main() -> std::io::Result<()> {
     })
     .bind("0.0.0.0:55000")?
     .run()
-    .await
+    .await?;
   
+    Ok(())
 
    
 
@@ -287,7 +318,7 @@ async fn index(finger_table: web::Data<Mutex<Vec<(u32, Node)>>>, prev_node: web:
 }
 
 #[put("/storage/{key}")]
-async fn item_put(web::Path(key): web::Path<String>, data:String  ,node_data: web::Data<Mutex<Node>>, finger_table: web::Data<Mutex<Vec<(u32, Node)>>>) -> impl Responder {
+async fn item_put(key: web::Path<String>, data:String  ,node_data: web::Data<Mutex<Node>>, finger_table: web::Data<Mutex<Vec<(u32, Node)>>>) -> impl Responder {
 
     let hash_ref = &key;
     let hashed_key = hash_function(hash_ref.to_string());
@@ -301,9 +332,14 @@ async fn item_put(web::Path(key): web::Path<String>, data:String  ,node_data: we
         
     } 
     else {
+
+     
+        
+        
         
         //Sends API call to succesor. (Under construction)
-        let succesor = find_succesor(hashed_key, finger_table.lock().unwrap().clone());
+        let succesor = find_succesor(hashed_key, finger_table.lock().unwrap().clone()).await;
+       
 
         let url = format!("http://{}/storage/{}", succesor, key);
         let client = reqwest::Client::new();
@@ -311,20 +347,32 @@ async fn item_put(web::Path(key): web::Path<String>, data:String  ,node_data: we
         println!("Response: {:?}", res);
 
 
-        HttpResponse::Ok().body(format!("Item {:?} inserted", node.hashmap))
+        HttpResponse::Ok().body(format!("Item {:?} inserted", res ))
     }
 
 }
 
 #[get("/storage/{key}")]
-async fn item_get(web::Path(key): web::Path<u32>, node_data: web::Data<Mutex<Node>>) -> impl Responder {
+async fn item_get(key: web::Path<u32>, node_data: web::Data<Mutex<Node>>, finger_table: web::Data<Mutex<Vec<(u32, Node)>>>) -> impl Responder {
 
 let node = node_data.lock().unwrap();
+let hash_ref = &key;
+let hashed_key = hash_function(hash_ref.to_string());
 
-if let Some(value) = node.hashmap.get(&key) {
+
+if let Some(value) = node.hashmap.get(&hashed_key) {
     HttpResponse::Ok().body(format!("Item {:?} found", value))
 } else {
-    HttpResponse::NotFound().body(format!("Item {:?} not found", key))
+
+    let succesor = find_succesor(hashed_key, finger_table.lock().unwrap().clone()).await;
+
+    let url = format!("http://{}/storage/{}", succesor, key);
+    let client = reqwest::Client::new();
+    println!("Test");
+    let res = client.get(&url).send().await;
+
+    HttpResponse::Ok().body(format!("Item {:?} not found", res))
+
 }
 
 

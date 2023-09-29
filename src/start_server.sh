@@ -19,7 +19,7 @@ while read -r line || [[ -n "$line" ]]; do
     fi
 
     echo "Starting Rust server on $node"
-    ssh $node "cd /mnt/users/ita022/inf-3200/p2p_rust_chord/src && cargo run" &
-done < ip.txt
+    ssh $node "cd /mnt/users/ita022/inf-3200/p2p_rust_chord/src && cargo run $1" &
+done < <(head -n $1 ip.txt)
 
 wait
