@@ -7,9 +7,8 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use actix_web::{get, put, web, App, HttpResponse, HttpServer, Responder};
-use std::sync::Mutex;
+use std::sync::{Mutex, Arc};
 use serde_derive::Serialize;
-use actix_web::rt::System;
 
 const KEY_SIZE: u32 = 4;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
@@ -19,7 +18,8 @@ const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
 pub struct Node {
     id: u32,
     ip: String,
-    hashmap: HashMap<u32, String>,
+    hashmap: HashMap<String, String>,
+    RespKeys: Vec<u32>,
 }
 // Structure to represent the neighbors of a node
 #[derive(Serialize,Debug, Clone, Eq, PartialEq)]
@@ -31,7 +31,7 @@ pub struct Neighbors {
 // Implementation of the Node structure
 impl Node {
     fn new(id: u32, ip: String) -> Self {
-        Node { id, ip, hashmap: HashMap::new() }
+        Node { id, ip, hashmap: HashMap::new(), RespKeys: Vec::new() }
     }
 }
 
@@ -168,12 +168,12 @@ fn fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
         (previous_id + 1, CLUSTER_SIZE)
     };
     for key_id in start_id..=end_id {
-        node.hashmap.insert(key_id, format!("value_{}", key_id));
+        node.RespKeys.push(key_id);
     }
 
     if previous_id > current_id {
         for key_id in 0..=current_id  {
-            node.hashmap.insert(key_id, format!("value_{}", key_id));
+            node.RespKeys.push(key_id);
         }
     }
 }
@@ -211,7 +211,7 @@ async fn find_succesor(key: u32, finger_table: Vec<(u32, Node)> ) -> String{
        
         }
     }
-    
+    println!("finger table: {:?}", finger_table);
     println!("Succesor: {}", succesor);
 
 
@@ -273,9 +273,8 @@ async fn main() -> std::io::Result<()> {
     
     
     fill_hashmap(&mut node, previous_node.id, node_id);
-    // println!("hashmap: {:?}", node.hashmap);
     
-    let node_data = web::Data::new(Mutex::new(node));
+    let node_data = web::Data::new(Arc::new(Mutex::new(node)));
     let previous_node_data = web::Data::new(Mutex::new(previous_node));
     let finger_table_data = web::Data::new(Mutex::new(finger_table));
     
@@ -318,17 +317,24 @@ async fn index(finger_table: web::Data<Mutex<Vec<(u32, Node)>>>, prev_node: web:
 }
 
 #[put("/storage/{key}")]
-async fn item_put(key: web::Path<String>, data:String  ,node_data: web::Data<Mutex<Node>>, finger_table: web::Data<Mutex<Vec<(u32, Node)>>>) -> impl Responder {
+async fn item_put(key: web::Path<String>, data:String  ,node_data: web::Data<Arc<Mutex<Node>>>, finger_table: web::Data<Mutex<Vec<(u32, Node)>>>) -> impl Responder {
 
     let hash_ref = &key;
     let hashed_key = hash_function(hash_ref.to_string());
-    println!("Received PUT request for key: {}", hashed_key);
+    print!("Hashed key: {:?}", hashed_key);
 
-    let mut node = node_data.lock().unwrap();
-    if node.hashmap.contains_key(&hashed_key) {
+    let node_ref = node_data.get_ref();
+    println!("hashmap before API: {:?}", node_ref.lock().unwrap().hashmap);
+
+
+    let mut node = node_ref.lock().unwrap();
+
+
+   
+    if node.RespKeys.contains(&hashed_key) {
         
-        node.hashmap.insert(hashed_key, data);
-        HttpResponse::Ok().body(format!("Item {:?} updated", node.hashmap))
+        node.hashmap.insert(key.to_string(), data);
+        HttpResponse::Ok().body(format!("Item {:?} updated", key))
         
     } 
     else {
@@ -339,39 +345,75 @@ async fn item_put(key: web::Path<String>, data:String  ,node_data: web::Data<Mut
         
         //Sends API call to succesor. (Under construction)
         let succesor = find_succesor(hashed_key, finger_table.lock().unwrap().clone()).await;
-       
+        
 
         let url = format!("http://{}/storage/{}", succesor, key);
         let client = reqwest::Client::new();
         let res = client.put(&url).body(data).send().await;
-        println!("Response: {:?}", res);
 
+        if res.is_err() {
+            println!("Error: {:?}", res);
+        }
+        else {
+            println!("Success: {:?}", res);
+            
+        }
 
-        HttpResponse::Ok().body(format!("Item {:?} inserted", res ))
+        HttpResponse::Ok().body(format!("Item {:?} inserted", key ))
     }
 
 }
 
 #[get("/storage/{key}")]
-async fn item_get(key: web::Path<u32>, node_data: web::Data<Mutex<Node>>, finger_table: web::Data<Mutex<Vec<(u32, Node)>>>) -> impl Responder {
+async fn item_get(key: web::Path<String>, node_data: web::Data<Arc<Mutex<Node>>>, finger_table: web::Data<Mutex<Vec<(u32, Node)>>>) -> impl Responder {
 
-let node = node_data.lock().unwrap();
+let node_ref = node_data.get_ref();
+
+let mut node = node_ref.lock().unwrap();
 let hash_ref = &key;
 let hashed_key = hash_function(hash_ref.to_string());
 
+println!("hashed key: {:?}", hashed_key);
 
-if let Some(value) = node.hashmap.get(&hashed_key) {
-    HttpResponse::Ok().body(format!("Item {:?} found", value))
+if node.RespKeys.contains(&hashed_key) {
+
+    if let Some(value) = node.hashmap.get(&key.to_string()) {
+        HttpResponse::Ok().body(value.to_string())
+    } else
+    {
+        HttpResponse::NotFound().body("Key not found")
+    }
+    
+
 } else {
 
     let succesor = find_succesor(hashed_key, finger_table.lock().unwrap().clone()).await;
 
     let url = format!("http://{}/storage/{}", succesor, key);
     let client = reqwest::Client::new();
-    println!("Test");
+
     let res = client.get(&url).send().await;
 
-    HttpResponse::Ok().body(format!("Item {:?} not found", res))
+    println!("Response: {:?}", res);
+
+    if let Ok(response) = res { 
+
+        if response.status() == 404 {
+            HttpResponse::NotFound().body("Key not found")
+        }
+        else {
+            HttpResponse::Ok().body(response.text().await.unwrap())
+        }
+            
+        
+
+
+    } else {
+       HttpResponse::InternalServerError().finish()
+    }
+
+
+
 
 }
 

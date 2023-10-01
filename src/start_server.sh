@@ -4,7 +4,7 @@
 local_ip=$(hostname -I | awk '{print $1}')
 
 echo "Starting Rust server on $local_ip"
-cargo run &
+cargo run $1 &
 
 # Read IP addresses from ip.txt file
 while read -r line || [[ -n "$line" ]]; do
