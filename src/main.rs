@@ -10,7 +10,7 @@ use actix_web::{get, put, web, App, HttpResponse, HttpServer, Responder};
 use std::sync::{Mutex, Arc};
 use serde_derive::Serialize;
 
-const KEY_SIZE: u32 = 4;
+const KEY_SIZE: u32 = 6;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
 
 // Structure to represent a node in the cluster, with its id, ip and hashmap
@@ -19,7 +19,7 @@ pub struct Node {
     id: u32,
     ip: String,
     hashmap: HashMap<String, String>,
-    RespKeys: Vec<u32>,
+    resp_keys: Vec<u32>,
 }
 // Structure to represent the neighbors of a node
 #[derive(Serialize,Debug, Clone, Eq, PartialEq)]
@@ -31,7 +31,7 @@ pub struct Neighbors {
 // Implementation of the Node structure
 impl Node {
     fn new(id: u32, ip: String) -> Self {
-        Node { id, ip, hashmap: HashMap::new(), RespKeys: Vec::new() }
+        Node { id, ip, hashmap: HashMap::new(), resp_keys: Vec::new() }
     }
 }
 
@@ -168,12 +168,12 @@ fn fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
         (previous_id + 1, CLUSTER_SIZE)
     };
     for key_id in start_id..=end_id {
-        node.RespKeys.push(key_id);
+        node.resp_keys.push(key_id);
     }
 
     if previous_id > current_id {
         for key_id in 0..=current_id  {
-            node.RespKeys.push(key_id);
+            node.resp_keys.push(key_id);
         }
     }
 }
@@ -186,31 +186,106 @@ fn get_local_ip() ->Option<IpAddr>{
 }
 
 //Function to find next succesor if the current node does not have the key. (Under construction)
-async fn find_succesor(key: u32, finger_table: Vec<(u32, Node)> ) -> String{
+async fn find_succesor(key: u32, finger_table: Vec<(u32, Node)>, current_id: u32 ) -> String{
     let mut succesor = String::new();
+
+    let succesor_id = finger_table[0].1.id;
+
+    
+
+    if succesor_id < current_id {
+        for i in current_id..=CLUSTER_SIZE {
+            if i == key {
+                succesor = finger_table[0].1.ip.clone();
+                break;
+            }
+        }
+
+        if succesor.is_empty() {
+            for i in 0..=succesor_id {
+                if i == key {
+                    succesor = finger_table[0].1.ip.clone();
+                    break;
+                }
+            }
+        }
+    } else {
+        for i in current_id..succesor_id {
+            if i == key {
+                succesor = finger_table[0].1.ip.clone();
+                break;
+            }
+        }
+    }
+
+
+            //sort the finger table by id
+    let mut sorted_finger_table = finger_table.clone();
+    sorted_finger_table.sort_by_key(|finger| finger.1.id);
+
+    if  succesor.is_empty() {
+        
+        for finger in sorted_finger_table.iter() {
+            if finger.1.id <= key {
+                println!("Finger: {:?}", finger);
+                succesor = finger.1.ip.clone();
+            
+            }
+        }
+    }
+
+    println!("Succesor: {}", succesor.len());
+
+    if succesor.is_empty() {
+
+      
+        
+
+        succesor = sorted_finger_table[sorted_finger_table.len() - 1].1.ip.clone();
+    }
+
+
+
+
 
     // println!("Finger table: {:?}", finger_table);
 
-    for finger in finger_table.iter() {
-        if finger.0 == key {
-            succesor = finger.1.ip.clone();
-        }
-    }
+    // for finger in finger_table.iter() {
+    //     if finger.1.id == key || finger.0 == key {
+    //         succesor = finger.1.ip.clone();
+    //         break;
+    //     }
+    // }
 
     
-    if succesor.is_empty() {
+    // if succesor.is_empty() {
 
-        for finger in finger_table.iter(){
-            if finger.0 > key {
-                succesor = finger.1.ip.clone();
-                break;
-            }
-            else {
-                succesor = finger_table[0].1.ip.clone();
-            }
-       
-        }
-    }
+    //     for finger in finger_table.iter().rev(){
+    //         println!("Finger: {:?}", finger);
+    //         if finger.0 < key {
+    //             succesor = finger.1.ip.clone();
+                
+                
+    //         }
+            
+            
+            
+    //     }
+    // }
+
+    // if succesor.is_empty() {
+
+    //     //sort the finger table by id
+    //     let mut sorted_finger_table = finger_table.clone();
+    //     sorted_finger_table.sort_by_key(|finger| finger.1.id);
+
+    //     // set succesor as the first node in the sorted finger table
+    //     succesor = sorted_finger_table[0].1.ip.clone();
+
+
+        
+    // }
+    println!("Key: {}", key);
     println!("finger table: {:?}", finger_table);
     println!("Succesor: {}", succesor);
 
@@ -319,20 +394,23 @@ async fn index(finger_table: web::Data<Mutex<Vec<(u32, Node)>>>, prev_node: web:
 #[put("/storage/{key}")]
 async fn item_put(key: web::Path<String>, data:String  ,node_data: web::Data<Arc<Mutex<Node>>>, finger_table: web::Data<Mutex<Vec<(u32, Node)>>>) -> impl Responder {
 
+    println!("Received PUT request for key: {:?}", key);
     let hash_ref = &key;
     let hashed_key = hash_function(hash_ref.to_string());
-    print!("Hashed key: {:?}", hashed_key);
+
 
     let node_ref = node_data.get_ref();
-    println!("hashmap before API: {:?}", node_ref.lock().unwrap().hashmap);
+
 
 
     let mut node = node_ref.lock().unwrap();
 
 
+    // println!("node id: {} is responsible for: {:?}", node.id, node.RespKeys);
    
-    if node.RespKeys.contains(&hashed_key) {
+    if node.resp_keys.contains(&hashed_key) {
         
+        println!("Key {:?} is in the node {}", key, node.id);
         node.hashmap.insert(key.to_string(), data);
         HttpResponse::Ok().body(format!("Item {:?} updated", key))
         
@@ -342,22 +420,23 @@ async fn item_put(key: web::Path<String>, data:String  ,node_data: web::Data<Arc
      
         
         
-        
+        println!("node_id: {}", node.id);
         //Sends API call to succesor. (Under construction)
-        let succesor = find_succesor(hashed_key, finger_table.lock().unwrap().clone()).await;
+        let succesor = find_succesor(hashed_key, finger_table.lock().unwrap().clone(), node.id).await;
         
 
         let url = format!("http://{}/storage/{}", succesor, key);
         let client = reqwest::Client::new();
         let res = client.put(&url).body(data).send().await;
 
-        if res.is_err() {
-            println!("Error: {:?}", res);
-        }
-        else {
-            println!("Success: {:?}", res);
+        // printlin!!()
+        // if res.is_err() {
+        //     println!("Error: {:?}", res);
+        // }
+        // else {
+        //     println!("Success: {:?}", res);
             
-        }
+        // }
 
         HttpResponse::Ok().body(format!("Item {:?} inserted", key ))
     }
@@ -369,13 +448,13 @@ async fn item_get(key: web::Path<String>, node_data: web::Data<Arc<Mutex<Node>>>
 
 let node_ref = node_data.get_ref();
 
-let mut node = node_ref.lock().unwrap();
+let node = node_ref.lock().unwrap();
 let hash_ref = &key;
 let hashed_key = hash_function(hash_ref.to_string());
 
-println!("hashed key: {:?}", hashed_key);
 
-if node.RespKeys.contains(&hashed_key) {
+
+if node.resp_keys.contains(&hashed_key) {
 
     if let Some(value) = node.hashmap.get(&key.to_string()) {
         HttpResponse::Ok().body(value.to_string())
@@ -387,14 +466,15 @@ if node.RespKeys.contains(&hashed_key) {
 
 } else {
 
-    let succesor = find_succesor(hashed_key, finger_table.lock().unwrap().clone()).await;
+    println!("node_id: {}", node.id);
+    let succesor = find_succesor(hashed_key, finger_table.lock().unwrap().clone(), node.id).await;
 
     let url = format!("http://{}/storage/{}", succesor, key);
     let client = reqwest::Client::new();
 
     let res = client.get(&url).send().await;
 
-    println!("Response: {:?}", res);
+
 
     if let Ok(response) = res { 
 
