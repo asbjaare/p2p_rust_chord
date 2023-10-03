@@ -313,6 +313,8 @@ async fn main() -> std::io::Result<()> {
   
     let num_nodes: u32 = args[1].parse().unwrap();
 
+
+
     
     // get the local ip address of the node
     let local_ip: IpAddr = get_local_ip().unwrap();
@@ -322,7 +324,7 @@ async fn main() -> std::io::Result<()> {
     let node_id = hash_function(local_ip.to_string());
 
     // format the ip address and port of the node
-    let ip_and_port = format!("{}:{}", local_ip.to_string(), 55000);
+    let ip_and_port = format!("{}:{}", local_ip.to_string(), 65000);
 
     // create a new node with the node id and ip address with port number
     let mut node = Node::new(node_id, ip_and_port);
@@ -334,17 +336,20 @@ async fn main() -> std::io::Result<()> {
     let mut previous_node = get_previous_node(node_id, num_nodes);
 
     // format the ip address and port of the previous node
-    previous_node.ip = format!("{}:{}", previous_node.ip, 55000);
+    previous_node.ip = format!("{}:{}", previous_node.ip, 65000);
     
     // format the ip address and port of the nodes in the fingertable
     for finger in finger_table.iter_mut() {
-        finger.1.ip = format!("{}:{}", finger.1.ip, 55000);
+        finger.1.ip = format!("{}:{}", finger.1.ip, 65000);
     }
     
-    // println!("Node: {}", node);
-    // println!("Previous node: {}", previous_node);
-    // println!("Finger table: {:?}", finger_table);
-    
+    if num_nodes == 1 {
+        node.resp_keys = (0..CLUSTER_SIZE).collect();
+        previous_node = node.clone();
+        finger_table = Vec::new();
+        finger_table.push((node_id, node.clone()));
+
+    }
     
     
     fill_hashmap(&mut node, previous_node.id, node_id);
@@ -366,7 +371,7 @@ async fn main() -> std::io::Result<()> {
         .service(item_get)
         .service(item_put)
     })
-    .bind("0.0.0.0:55000")?
+    .bind("0.0.0.0:65000")?
     .run()
     .await?;
   
