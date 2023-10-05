@@ -59,4 +59,4 @@ There is a compiled release version of the program in the folder "target". You c
 ./start_server <number of nodes>
 ```
 
- and you clean all up, you have to navigate to where the ./cleanup.sh file is and run it.
+ and you clean all up, you have to navigate to where the /share/ifi/cleanup.sh file is and run it.
