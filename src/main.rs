@@ -227,14 +227,14 @@ async fn find_succesor(key: u32, finger_table: Vec<(u32, Node)>, current_id: u32
         
         for finger in sorted_finger_table.iter() {
             if finger.1.id <= key {
-                println!("Finger: {:?}", finger);
+                // println!("Finger: {:?}", finger);
                 succesor = finger.1.ip.clone();
             
             }
         }
     }
 
-    println!("Succesor: {}", succesor.len());
+    // println!("Succesor: {}", succesor.len());
 
     if succesor.is_empty() {
 
@@ -285,9 +285,9 @@ async fn find_succesor(key: u32, finger_table: Vec<(u32, Node)>, current_id: u32
 
         
     // }
-    println!("Key: {}", key);
-    println!("finger table: {:?}", finger_table);
-    println!("Succesor: {}", succesor);
+    // println!("Key: {}", key);
+    // println!("finger table: {:?}", finger_table);
+    // println!("Succesor: {}", succesor);
 
 
     succesor
@@ -385,7 +385,7 @@ async fn main() -> std::io::Result<()> {
 
 #[get("/storage/neighbors")]
 async fn index(finger_table: web::Data<Mutex<Vec<(u32, Node)>>>, prev_node: web::Data<Mutex<Node>>  ) -> impl Responder {
-    println!("Received GET request"); 
+    // println!("Received GET request"); 
     let finger_table = finger_table.lock().unwrap();
     let prev_node = prev_node.lock().unwrap();
     let neightbors = Neighbors {
@@ -399,7 +399,7 @@ async fn index(finger_table: web::Data<Mutex<Vec<(u32, Node)>>>, prev_node: web:
 #[put("/storage/{key}")]
 async fn item_put(key: web::Path<String>, data:String  ,node_data: web::Data<Arc<Mutex<Node>>>, finger_table: web::Data<Mutex<Vec<(u32, Node)>>>) -> impl Responder {
 
-    println!("Received PUT request for key: {:?}", key);
+    // println!("Received PUT request for key: {:?}", key);
     let hash_ref = &key;
     let hashed_key = hash_function(hash_ref.to_string());
 
@@ -415,7 +415,7 @@ async fn item_put(key: web::Path<String>, data:String  ,node_data: web::Data<Arc
    
     if node.resp_keys.contains(&hashed_key) {
         
-        println!("Key {:?} is in the node {}", key, node.id);
+        // println!("Key {:?} is in the node {}", key, node.id);
         node.hashmap.insert(key.to_string(), data);
         HttpResponse::Ok().body(format!("Item {:?} updated", key))
         
@@ -425,14 +425,14 @@ async fn item_put(key: web::Path<String>, data:String  ,node_data: web::Data<Arc
      
         
         
-        println!("node_id: {}", node.id);
+        // println!("node_id: {}", node.id);
         //Sends API call to succesor. (Under construction)
         let succesor = find_succesor(hashed_key, finger_table.lock().unwrap().clone(), node.id).await;
         
 
         let url = format!("http://{}/storage/{}", succesor, key);
         let client = reqwest::Client::new();
-        let res = client.put(&url).body(data).send().await;
+        let _res = client.put(&url).body(data).send().await;
 
         // printlin!!()
         // if res.is_err() {
@@ -471,7 +471,7 @@ if node.resp_keys.contains(&hashed_key) {
 
 } else {
 
-    println!("node_id: {}", node.id);
+    // println!("node_id: {}", node.id);
     let succesor = find_succesor(hashed_key, finger_table.lock().unwrap().clone(), node.id).await;
 
     let url = format!("http://{}/storage/{}", succesor, key);
