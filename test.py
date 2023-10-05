@@ -1,9 +1,9 @@
 import requests
 import time
 import csv
+
 # Define the server URL
 server_url = "http://172.21.21.175:65000/storage/2"
-
 
 
 num_requests = 100  # Adjust as needed
@@ -12,12 +12,15 @@ num_requests = 100  # Adjust as needed
 # Functi n to perform a PUT request
 def perform_put_request():
     global put_count
-    response = requests.put(server_url, data='data.txt')
+    response = requests.put(server_url, data="data.txt")
+
 
 # Function to perform a GET request
 def perform_get_request():
     global get_count
     response = requests.get(server_url)
+
+
 for i in range(10):
     # Measure the throughput
     start_time = time.time()
