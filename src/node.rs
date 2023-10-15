@@ -186,22 +186,28 @@ pub fn get_previous_node(node_id: u32, number_of_nodes: u32) -> Node {
 /// * `previous_id` - The id of the previous node in the ring.
 /// * `current_id` - The id of the current node in the ring.
 pub fn fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
-    // if the previous id is less than the current id, fill the hashmap with the keys between the previous id and the current id.
-    // else fill the hashmap with the keys between the previous id and the cluster size, and then between 0 and the current id
-    let (start_id, end_id) = if previous_id < current_id {
-        (previous_id + 1, current_id)
-    } else {
-        (previous_id + 1, CLUSTER_SIZE)
-    };
-    for key_id in start_id..=end_id {
-        node.resp_keys.push(key_id);
-    }
 
-    if previous_id > current_id {
-        for key_id in 0..=current_id {
-            node.resp_keys.push(key_id);
-        }
-    }
+
+        
+            // if the previous id is less than the current id, fill the hashmap with the keys between the previous id and the current id.
+            // else fill the hashmap with the keys between the previous id and the cluster size, and then between 0 and the current id
+            let (start_id, end_id) = if previous_id < current_id {
+                (previous_id + 1, current_id)
+            } else {
+                (previous_id + 1, CLUSTER_SIZE)
+            };
+            for key_id in start_id..=end_id {
+                node.resp_keys.push(key_id);
+            }
+        
+            if previous_id > current_id {
+                for key_id in 0..=current_id {
+                    node.resp_keys.push(key_id);
+                }
+            }
+        
+    
+
 }
 
 /// Finds the successor node for a given key in the finger table.

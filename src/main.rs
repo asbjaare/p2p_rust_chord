@@ -1,4 +1,4 @@
-use actix_web::{get, put, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{get, put,post, web, App, HttpResponse, HttpServer, Responder};
 use serde_derive::Serialize;
 use std::env;
 use std::net::IpAddr;
@@ -18,6 +18,12 @@ pub struct Neighbors {
     next: String,
 }
 
+#[derive(Serialize, Debug, Clone, Eq, PartialEq)]
+struct NodeInfo {
+    node_hash: u32,
+    successor: String,
+    others: Vec<String>,
+}
 
 
 async fn send_put_request(url: String, data: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -103,93 +109,177 @@ fn get_local_ip() -> Option<IpAddr> {
 /// ### Returns
 ///
 /// This function returns a `std::io::Result<()>` which indicates whether the operation was successful or not.
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    if env::var_os("RUST_LOG").is_none() {
-        // Set `RUST_LOG=todos=debug` to see debug logs,
-        // this only shows access logs.
-        env::set_var("RUST_LOG", "todos=info");
-    }
-    pretty_env_logger::init();
+// #[actix_web::main]
+// async fn main() -> std::io::Result<()> {
+//     if env::var_os("RUST_LOG").is_none() {
+//         // Set `RUST_LOG=todos=debug` to see debug logs,
+//         // this only shows access logs.
+//         env::set_var("RUST_LOG", "todos=info");
+//     }
+//     pretty_env_logger::init();
 
-    let args: Vec<String> = env::args().collect();
+//     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 2 {
-        println!("Provde number of nodes as argument");
-        std::process::exit(1);
-    }
+//     if args.len() < 2 {
+//         println!("Provde number of nodes as argument");
+//         std::process::exit(1);
+//     }
 
 
-    if args.len() < 3 {
-        println!("Provde port number as argument");
-        std::process::exit(1);
-    }
+//     if args.len() < 3 {
+//         println!("Provde port number as argument");
+//         std::process::exit(1);
+//     }
         
     
 
-    let num_nodes: u32 = args[1].parse().unwrap();
+//     let num_nodes: u32 = args[1].parse().unwrap();
 
-    let port_num: u32 = args[2].parse().unwrap();
+//     let port_num: u32 = args[2].parse().unwrap();
 
-    // get the local ip address of the node
-    let local_ip: IpAddr = get_local_ip().unwrap();
+//     // get the local ip address of the node
+//     let local_ip: IpAddr = get_local_ip().unwrap();
 
-    // get the node id of the node
-    let node_id = Node::hash_function(local_ip.to_string());
+//     // get the node id of the node
+//     let node_id = Node::hash_function(local_ip.to_string());
 
-    // format the ip address and port of the node
-    let ip_and_port = format!("{}:{}", local_ip.to_string(), port_num);
+//     // format the ip address and port of the node
+//     let ip_and_port = format!("{}:{}", local_ip.to_string(), port_num);
 
-    // create a new node with the node id and ip address with port number
-    let mut node = Node::new(node_id, ip_and_port);
+//     // create a new node with the node id and ip address with port number
+//     let mut node = Node::new(node_id, ip_and_port);
 
-    // populate the fingertable of the node
-    let mut finger_table = Node::populate_fingertable(node_id, num_nodes);
+//     // populate the fingertable of the node
+//     let mut finger_table = Node::populate_fingertable(node_id, num_nodes);
 
-    // get the previous node of the current node in the cluster
-    let mut previous_node = Node::get_previous_node(node_id, num_nodes);
+//     // get the previous node of the current node in the cluster
+//     let mut previous_node = Node::get_previous_node(node_id, num_nodes);
 
-    // format the ip address and port of the previous node
-    previous_node.ip = format!("{}:{}", previous_node.ip, port_num);
+//     // format the ip address and port of the previous node
+//     previous_node.ip = format!("{}:{}", previous_node.ip, port_num);
 
-    // format the ip address and port of the nodes in the fingertable
-    for finger in finger_table.iter_mut() {
-        finger.1.ip = format!("{}:{}", finger.1.ip, port_num);
-    }
+//     // format the ip address and port of the nodes in the fingertable
+//     for finger in finger_table.iter_mut() {
+//         finger.1.ip = format!("{}:{}", finger.1.ip, port_num);
+//     }
 
-    if num_nodes == 1 {
-        node.resp_keys = (0..CLUSTER_SIZE).collect();
-        previous_node = node.clone();
-        finger_table = Vec::new();
-        finger_table.push((node_id, node.clone()));
-    }
+//     if num_nodes == 1 {
+//         node.resp_keys = (0..CLUSTER_SIZE).collect();
+//         previous_node = node.clone();
+//         finger_table = Vec::new();
+//         finger_table.push((node_id, node.clone()));
+//     }
 
-    Node::fill_hashmap(&mut node, previous_node.id, node_id);
+//     Node::fill_hashmap(&mut node, previous_node.id, node_id);
 
-    let node_data = web::Data::new(Arc::new(RwLock::new(node)));
-    let previous_node_data = web::Data::new(RwLock::new(previous_node));
-    let finger_table_data = web::Data::new(Arc::new(RwLock::new(finger_table)));
+//     let node_data = web::Data::new(Arc::new(RwLock::new(node)));
+//     let previous_node_data = web::Data::new(RwLock::new(previous_node));
+//     let finger_table_data = web::Data::new(Arc::new(RwLock::new(finger_table)));
 
-    println!("Server starting at http:// {}", local_ip.to_string());
+//     println!("Server starting at http:// {}", local_ip.to_string());
 
-    let server_addr = format!("{}:{}", "0.0.0.0", port_num);
+//     let server_addr = format!("{}:{}", "0.0.0.0", port_num);
 
-    HttpServer::new(move || {
-        App::new()
-            .app_data(node_data.clone())
-            .app_data(previous_node_data.clone())
-            .app_data(finger_table_data.clone())
-            .service(index)
-            .service(item_get)
-            .service(item_put)
-    })
-    .workers(4)
-    .bind(server_addr)?
-    .run()
-    .await?;
+//     HttpServer::new(move || {
+//         App::new()
+//             .app_data(node_data.clone())
+//             .app_data(previous_node_data.clone())
+//             .app_data(finger_table_data.clone())
+//             .service(index)
+//             .service(item_get)
+//             .service(item_put)
+//             .service(get_node_info)
+//     })
+//     .workers(4)
+//     .bind(server_addr)?
+//     .run()
+//     .await?;
 
-    Ok(())
+//     Ok(())
+// }
+
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+
+    if env::var_os("RUST_LOG").is_none() {
+                // Set `RUST_LOG=todos=debug` to see debug logs,
+                // this only shows access logs.
+                env::set_var("RUST_LOG", "todos=info");
+            }
+            pretty_env_logger::init();
+        
+            let args: Vec<String> = env::args().collect();
+        
+            if args.len() < 2 {
+                println!("Provde number of nodes as argument");
+                std::process::exit(1);
+            }
+        
+        
+            if args.len() < 3 {
+                println!("Provde port number as argument");
+                std::process::exit(1);
+            }
+                
+           
+        
+            let _num_nodes: u32 = args[1].parse().unwrap();
+        
+            let port_num: u32 = args[2].parse().unwrap();
+        
+            // get the local ip address of the node
+            let local_ip: IpAddr = get_local_ip().unwrap();
+        
+            // get the node id of the node
+            let node_id = Node::hash_function(local_ip.to_string());
+        
+            // format the ip address and port of the node
+            let ip_and_port = format!("{}:{}", local_ip.to_string(), port_num);
+        
+            // create a new node with the node id and ip address with port number
+            let mut node = Node::new(node_id, ip_and_port);
+
+            let  current_num_nodes_in_cluster = 1;
+
+
+            node.resp_keys = (0..CLUSTER_SIZE).collect();
+            let  previous_node = node.clone();
+            let mut finger_table = Vec::new();
+            finger_table.push((node_id, node.clone()));
+
+        let node_data = web::Data::new(Arc::new(RwLock::new(node)));
+        let previous_node_data = web::Data::new(RwLock::new(previous_node));
+        let finger_table_data = web::Data::new(Arc::new(RwLock::new(finger_table)));
+        let num_node_data = web::Data::new(Arc::new(RwLock::new(current_num_nodes_in_cluster)));
+
+
+        println!("Server starting at http:// {}", local_ip.to_string());
+        let server_addr = format!("{}:{}", "0.0.0.0", port_num);
+
+        HttpServer::new(move || {
+            App::new()
+                .app_data(node_data.clone())
+                .app_data(previous_node_data.clone())
+                .app_data(finger_table_data.clone())
+                .app_data(num_node_data.clone())
+                .service(index)
+                .service(item_get)
+                .service(item_put)
+                .service(get_node_info)
+        })
+        .workers(4)
+        .bind(server_addr)?
+        .run()
+        .await?;
+
+        Ok(())
+
+            
+
+
 }
+
 
 /// Handles GET requests to retrieve the IP addresses of the current node's neighbors in the Chord ring.
 ///
@@ -301,15 +391,7 @@ async fn item_get(
         let _res = send_get_request(url).await;
         
 
-        // if let Ok(response) = _res {
-        //     if response== 404 {
-        //         HttpResponse::NotFound().body("Key not found")
-        //     } else {
-        //         HttpResponse::Ok().body(response.text().await.unwrap())
-        //     }
-        // } else {
-        //     HttpResponse::InternalServerError().finish()
-        // }
+ 
 
        if let Ok(response) = _res {
            if response == "Key not found" {
@@ -326,3 +408,31 @@ async fn item_get(
 
     }
 }
+
+#[get("/node-info")]
+async fn get_node_info(node_data: web::Data<Arc<RwLock<Node>>>, finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>) -> impl Responder {
+    let node_ref = node_data.read().await;
+    let node = &*node_ref;
+    let finger_table_ref = finger_table.read().await;
+    let node_hash = node.id;
+    let successor = finger_table_ref[0].1.ip.clone();
+    let mut other = Vec::new();
+
+    for finger in finger_table_ref.iter() {
+        other.push(finger.1.ip.clone());
+    }
+
+    let node_info = NodeInfo {
+        node_hash,
+        successor,
+        others: other,
+    };
+
+    HttpResponse::Ok().json(node_info)
+}
+
+// #[post("/join?nprime={nprime}")]
+// async fn post_join_ring(node_data: web::Data<Arc<RwLock<Node>>>, finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>, num_node_data: web::Data<Arc<RwLock<i32>>>) -> impl Responder 
+//  {
+
+//  }
