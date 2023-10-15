@@ -4,6 +4,7 @@ use std::env;
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync:: RwLock;
+use hyper::{Body, Client, Request, Uri};
 mod node;
 
 const KEY_SIZE: u32 = 6;
@@ -19,6 +20,48 @@ pub struct Neighbors {
 
 
 
+async fn send_put_request(url: String, data: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let client = Client::new();
+
+    let uri = url.parse::<Uri>()?;
+
+    let req = Request::builder()
+        .method("PUT")
+        .uri(uri)
+        .header("content-type", "text/plain")
+        .body(Body::from(data))?;
+
+    let _res = client.request(req).await?;
+
+    Ok(())
+}
+
+async fn send_get_request(url: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let client = Client::new();
+
+    let uri = url.parse::<Uri>()?;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(uri)
+        .header("content-type", "text/plain")
+        .body(Body::empty())?;
+
+    let res = client.request(req).await?;
+
+    
+
+    let body = hyper::body::to_bytes(res.into_body()).await?;
+
+    let body = String::from_utf8(body.to_vec())?;
+
+        
+    
+
+    
+    
+    Ok(body)
+}
 
 
 
@@ -158,7 +201,7 @@ async fn main() -> std::io::Result<()> {
 /// ### Returns
 ///
 /// Returns a JSON response containing the IP addresses of the current node's neighbors.
-#[get("/storage/neighbors")]
+#[get("/neighbors")]
 async fn index(
     finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>,
     prev_node: web::Data<RwLock<Node>>,
@@ -213,8 +256,8 @@ async fn item_put(
             Node::find_succesor(hashed_key, finger_table.read().await.clone(), node.id).await;
 
         let url = format!("http://{}/storage/{}", succesor, key);
-        let client = reqwest::Client::new();
-        let _res = client.put(&url).body(data).send().await;
+       
+        let _res = send_put_request(url, data).await;
 
         HttpResponse::Ok().body(format!("Item {:?} inserted", key))
     }
@@ -253,19 +296,33 @@ async fn item_get(
         let succesor =
             Node::find_succesor(hashed_key, finger_table.read().await.clone(), node.id).await;
 
+      
         let url = format!("http://{}/storage/{}", succesor, key);
-        let client = reqwest::Client::new();
+        let _res = send_get_request(url).await;
+        
 
-        let res = client.get(&url).send().await;
+        // if let Ok(response) = _res {
+        //     if response== 404 {
+        //         HttpResponse::NotFound().body("Key not found")
+        //     } else {
+        //         HttpResponse::Ok().body(response.text().await.unwrap())
+        //     }
+        // } else {
+        //     HttpResponse::InternalServerError().finish()
+        // }
 
-        if let Ok(response) = res {
-            if response.status() == 404 {
-                HttpResponse::NotFound().body("Key not found")
-            } else {
-                HttpResponse::Ok().body(response.text().await.unwrap())
-            }
-        } else {
-            HttpResponse::InternalServerError().finish()
-        }
+       if let Ok(response) = _res {
+           if response == "Key not found" {
+               HttpResponse::NotFound().body("Key not found")
+           } else {
+               HttpResponse::Ok().body(response)
+           }
+           
+       } else {
+           HttpResponse::InternalServerError().finish()
+       }
+           
+       
+
     }
 }
