@@ -1,5 +1,6 @@
 use actix_web::{get, put,post, web, App, HttpResponse, HttpServer, Responder};
-use serde_derive::Serialize;
+use serde_derive::{Serialize, Deserialize};
+use serde_json::Value;
 use std::env;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -18,11 +19,16 @@ pub struct Neighbors {
     next: String,
 }
 
-#[derive(Serialize, Debug, Clone, Eq, PartialEq)]
+#[derive(Serialize, Debug, Clone, Eq, PartialEq, Deserialize)]
 struct NodeInfo {
     node_hash: u32,
     successor: String,
     others: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct JoinQuery {
+    nprime: String,
 }
 
 
@@ -245,8 +251,8 @@ async fn main() -> std::io::Result<()> {
 
             node.resp_keys = (0..CLUSTER_SIZE).collect();
             let  previous_node = node.clone();
-            let mut finger_table = Vec::new();
-            finger_table.push((node_id, node.clone()));
+            let finger_table:Vec<(u32, Node)> = Vec::with_capacity(KEY_SIZE as usize);
+            // finger_table.push((node_id, node.clone()));
 
         let node_data = web::Data::new(Arc::new(RwLock::new(node)));
         let previous_node_data = web::Data::new(RwLock::new(previous_node));
@@ -260,15 +266,16 @@ async fn main() -> std::io::Result<()> {
         HttpServer::new(move || {
             App::new()
                 .app_data(node_data.clone())
-                .app_data(previous_node_data.clone())
                 .app_data(finger_table_data.clone())
+                .app_data(previous_node_data.clone())
                 .app_data(num_node_data.clone())
                 .service(index)
                 .service(item_get)
                 .service(item_put)
                 .service(get_node_info)
+                .service(post_join_ring)
         })
-        .workers(4)
+        .workers(8)
         .bind(server_addr)?
         .run()
         .await?;
@@ -415,12 +422,18 @@ async fn get_node_info(node_data: web::Data<Arc<RwLock<Node>>>, finger_table: we
     let node = &*node_ref;
     let finger_table_ref = finger_table.read().await;
     let node_hash = node.id;
-    let successor = finger_table_ref[0].1.ip.clone();
+    let mut successor: String = "".to_string();
     let mut other = Vec::new();
 
-    for finger in finger_table_ref.iter() {
-        other.push(finger.1.ip.clone());
+    if finger_table_ref.len() != 0 {
+
+        successor = finger_table_ref[0].1.ip.clone();
+        for finger in finger_table_ref.iter() {
+            other.push(finger.1.ip.clone());
+        }
+        
     }
+
 
     let node_info = NodeInfo {
         node_hash,
@@ -431,8 +444,33 @@ async fn get_node_info(node_data: web::Data<Arc<RwLock<Node>>>, finger_table: we
     HttpResponse::Ok().json(node_info)
 }
 
-// #[post("/join?nprime={nprime}")]
-// async fn post_join_ring(node_data: web::Data<Arc<RwLock<Node>>>, finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>, num_node_data: web::Data<Arc<RwLock<i32>>>) -> impl Responder 
-//  {
+#[post("/join")]
+async fn post_join_ring(query: web::Query<JoinQuery>, node_data: web::Data<Arc<RwLock<Node>>>, finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>, num_node_data: web::Data<Arc<RwLock<i32>>>, prev_node: web::Data<RwLock<Node>>, ) -> impl Responder 
+ {
 
-//  }
+    // println!("nprime {:?}", query.nprime);
+    let ip_and_port:Vec<&str> = query.nprime.split(":").collect();
+    println!("ip_and_port {:?}", ip_and_port); 
+
+    let url = format!("http://{}/node-info", query.nprime);
+    let res = send_get_request(url).await;
+
+    let res_data: Value = serde_json::from_str(&res.unwrap()).unwrap();
+
+    let mut node_ref = node_data.write().await;
+    let mut finger_table_ref = finger_table.write().await;
+
+    node_ref.resp_keys.clear();
+    
+
+    let node_id = res_data["node_hash"].as_u64().unwrap() as u32;
+    let others = res_data["others"].as_array().unwrap();
+
+    if others.len() == 0 {
+        
+        finger_table_ref.push((node_id, Node::new(node_id, query.nprime.clone())));
+    }
+
+    HttpResponse::Ok().body("ok")
+
+ }
