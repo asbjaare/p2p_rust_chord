@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::fs;
 use std::hash::{Hash, Hasher};
+use serde_json::Value;
 
 const KEY_SIZE: u32 = 6;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
@@ -210,6 +211,39 @@ pub fn fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
 
 }
 
+pub async fn find_succesor_to_joining_node(node_id: u32, finger_table: &Vec<Value>) -> String  
+{
+    let mut successor = String::new();
+
+    let mut sorted_finger_table = finger_table.clone();
+    sorted_finger_table.sort_by_key(|finger| Node::hash_function(finger.to_string()));
+
+    for finger in sorted_finger_table.iter() {
+        if Node::hash_function(finger.to_string()) > node_id {
+            successor = finger.to_string();
+           
+        }
+    }
+
+
+    successor
+}
+
+pub async fn fix_finger(succesor: String, finger_table: Vec<(u32, Node)>)
+{
+    
+}
+
+pub fn is_between(id: u32, start: u32, end: u32) -> bool {
+    if start <= end {
+        id > start && id <= end
+    } else {
+        id > start || id <= end
+    }
+}
+
+
+
 /// Finds the successor node for a given key in the finger table.
 ///
 /// ### Arguments
@@ -220,7 +254,7 @@ pub fn fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
 /// ### Returns
 ///
 /// A `String` representing the IP address of the successor node.
-pub async fn find_succesor(key: u32, finger_table: Vec<(u32, Node)>, current_id: u32) -> String {
+pub async fn find_succesor_key(key: u32, finger_table: Vec<(u32, Node)>, current_id: u32) -> String {
     let mut succesor = String::new();
 
     let succesor_id = finger_table[0].1.id;

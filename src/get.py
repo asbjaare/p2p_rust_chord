@@ -1,7 +1,8 @@
 import requests
 
 # key = input("what key:")
-nprime = "172.21.21.176:55000"
-response = requests.get("http://172.21.21.175:55000/node-info")
+nprime = "172.21.21.176:55555"
+response = requests.post("http://172.21.21.175:55555/join?nprime=" + nprime)
+# response = requests.get("http://172.21.21.176:55555/node-info")
 print(response.status_code)
 print(response.text)
