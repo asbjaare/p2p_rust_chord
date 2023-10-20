@@ -8,7 +8,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use serde_json::Value;
 
-const KEY_SIZE: u32 = 6;
+const KEY_SIZE: u32 = 8;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
 
 
@@ -21,6 +21,20 @@ pub struct Node {
     pub resp_keys: Vec<u32>,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub struct NodePrev {
+    pub id: u32,
+    pub ip: String,
+}
+
+impl NodePrev {
+    pub fn new(id: u32, ip: String) -> Self {
+        NodePrev {
+            id,
+            ip,
+        }
+    }
+}
 
 
 /// Parses a line of the ip.txt file to get the id and ip address of a node.
@@ -91,7 +105,7 @@ impl Node {
 /// ```
 /// let fingertable = populate_fingertable(42);
 /// ```
- pub fn populate_fingertable(node_id: u32, number_of_nodes: u32) -> Vec<(u32, Node)> {
+ pub fn _populate_fingertable(node_id: u32, number_of_nodes: u32) -> Vec<(u32, Node)> {
     let mut nodes: HashSet<Node> = HashSet::new();
     let mut finger_table: Vec<(u32, Node)> = Vec::new();
 
@@ -145,7 +159,7 @@ impl Node {
 /// ### Returns
 ///
 /// A `Node` struct representing the previous node in the cluster.
-pub fn get_previous_node(node_id: u32, number_of_nodes: u32) -> Node {
+pub fn _get_previous_node(node_id: u32, number_of_nodes: u32) -> Node {
     let mut nodes: HashSet<Node> = HashSet::new();
 
     // read the ip.txt file to get the ip addresses of the nodes
@@ -186,7 +200,7 @@ pub fn get_previous_node(node_id: u32, number_of_nodes: u32) -> Node {
 /// * `node` - A mutable reference to the node whose hashmap is to be filled.
 /// * `previous_id` - The id of the previous node in the ring.
 /// * `current_id` - The id of the current node in the ring.
-pub fn fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
+pub fn _fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
 
 
         
@@ -211,7 +225,7 @@ pub fn fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
 
 }
 
-pub async fn find_succesor_to_joining_node(node_id: u32, finger_table: &Vec<Value>) -> String  
+pub async fn find_succesor_to_joining_node(node_id: u32, finger_table: Vec<String>) -> String  
 {
     let mut successor = String::new();
 
@@ -220,19 +234,19 @@ pub async fn find_succesor_to_joining_node(node_id: u32, finger_table: &Vec<Valu
 
     for finger in sorted_finger_table.iter() {
         if Node::hash_function(finger.to_string()) > node_id {
+            println!("Finger: {:?}", finger);
             successor = finger.to_string();
            
         }
     }
 
+    
+
 
     successor
 }
 
-pub async fn fix_finger(succesor: String, finger_table: Vec<(u32, Node)>)
-{
-    
-}
+
 
 pub fn is_between(id: u32, start: u32, end: u32) -> bool {
     if start <= end {
@@ -242,7 +256,25 @@ pub fn is_between(id: u32, start: u32, end: u32) -> bool {
     }
 }
 
+pub fn get_best_successor(key_id: u32, node_id: u32, succ1_node: Node, succ2_node: Node) -> Node {
+    let dist1 = if succ1_node.id >= node_id {
+        succ1_node.id - key_id
+    } else {
+        (u32::MAX - key_id) + succ1_node.id + 1
+    };
 
+    let dist2 = if succ2_node.id >= node_id {
+        succ2_node.id - key_id
+    } else {
+        (u32::MAX - key_id) + succ2_node.id + 1
+    };
+
+    if dist1 <= dist2 {
+        succ1_node
+    } else {
+        succ2_node
+    }
+}
 
 /// Finds the successor node for a given key in the finger table.
 ///

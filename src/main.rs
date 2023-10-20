@@ -5,12 +5,13 @@ use std::{env, iter::Successors};
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync:: RwLock;
+// use no_deadlocks::RwLock;
 use hyper::{Body, Client, Request, Uri};
 mod node;
 
-const KEY_SIZE: u32 = 6;
+const KEY_SIZE: u32 = 8;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
-use node::Node;
+use node::{Node, NodePrev};
 
 /// Structure to represent the neighbors of a node
 #[derive(Serialize, Debug, Clone, Eq, PartialEq)]
@@ -248,20 +249,25 @@ async fn main() -> std::io::Result<()> {
             let  current_num_nodes_in_cluster = 1;
 
 
-            let  previous_node = node.clone();
+            let  prev_node = NodePrev::new(0, "".to_string());
             let mut finger_table:Vec<(u32, Node)> = Vec::with_capacity(KEY_SIZE as usize);
             for i in 0..KEY_SIZE {
-                finger_table.push((node_id, node.clone()));
+                let finger_id  = (node_id + 2u32.pow(i)) % CLUSTER_SIZE;
+
+
+                finger_table.push((finger_id, node.clone()));
             }
             node.resp_keys = (0..CLUSTER_SIZE).collect();
 
+        // println!("finger_table {:?} at node id {:?}", finger_table, node_id);
+
         let node_data = web::Data::new(Arc::new(RwLock::new(node)));
-        let previous_node_data = web::Data::new(Arc::new(RwLock::new(previous_node)));
+        let previous_node_data = web::Data::new(Arc::new(RwLock::new(prev_node)));
         let finger_table_data = web::Data::new(Arc::new(RwLock::new(finger_table)));
         let num_node_data = web::Data::new(Arc::new(RwLock::new(current_num_nodes_in_cluster)));
 
 
-        println!("Server starting at http:// {}", local_ip.to_string());
+        println!("Server starting at http:// {} with node_id {:?}", local_ip.to_string(), node_id);
         let server_addr = format!("{}:{}", "0.0.0.0", port_num);
 
         HttpServer::new(move || {
@@ -277,6 +283,7 @@ async fn main() -> std::io::Result<()> {
                 .service(post_join_ring)
                 .service(put_notify)
                 .service(get_succ)
+                .service(put_notify_succ)
         })
         .workers(8)
         .bind(server_addr)?
@@ -304,7 +311,7 @@ async fn main() -> std::io::Result<()> {
 #[get("/neighbors")]
 async fn index(
     finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>,
-    prev_node: web::Data<Arc<RwLock<Node>>>,
+    prev_node: web::Data<Arc<RwLock<NodePrev>>>,
 ) -> impl Responder {
     let finger_table = finger_table.read().await;
     let prev_node = prev_node.read().await;
@@ -447,87 +454,99 @@ async fn get_node_info(node_data: web::Data<Arc<RwLock<Node>>>, finger_table: we
     HttpResponse::Ok().json(node_info)
 }
 
-#[post("/join")]
-async fn post_join_ring(query: web::Query<JoinQuery>, node_data: web::Data<Arc<RwLock<Node>>>, finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>, num_node_data: web::Data<Arc<RwLock<i32>>>, prev_node: web::Data<Arc<RwLock<Node>>>, ) -> impl Responder 
+
+
+ #[post("/join")]
+async fn post_join_ring(query: web::Query<JoinQuery>, node_data: web::Data<Arc<RwLock<Node>>>, finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>, previous_node_data: web::Data<Arc<RwLock<NodePrev>>>, num_node_data: web::Data<Arc<RwLock<i32>>>,) -> impl Responder 
  {
 
-    // println!("nprime {:?}", query.nprime);
     let ip_and_port:Vec<&str> = query.nprime.split(":").collect();
     println!("ip_and_port {:?}", ip_and_port); 
-
-    let url = format!("http://{}/node-info", query.nprime);
-    let res = send_get_request(url).await;
-
-    let res_data: Value = serde_json::from_str(&res.unwrap()).unwrap();
-
+    
+    
     let mut node_ref = node_data.write().await;
+    println!("node_id {:?}", node_ref.id);
+    
+
     let mut finger_table_ref = finger_table.write().await;
+    
+    
     let mut num_node_data_ref = num_node_data.write().await;
+    
+
+    let mut prev_node_ref = previous_node_data.write().await; //DEADLOCK????
+    
+
+    
+
+
     *num_node_data_ref += 1;
 
     node_ref.resp_keys.clear();
     
 
-    let node_id = res_data["node_hash"].as_u64().unwrap() as u32;
-    let others = res_data["others"].as_array().unwrap();
-    let mut successor: String;
+    let url = format!("http://{}/succesor/{}", query.nprime, node_ref.ip);
 
-    if node_id > node_ref.id {
-        successor = query.nprime.clone();
-       
-    }
-    else {
-        
-  
-                successor = Node::find_succesor_to_joining_node(node_ref.id, others).await;
-        
-                if successor.is_empty() {
-                    let url = format!("http://{}/succesor/{}", others[others.len() - 1], node_ref.id);
-                    let res = send_get_request(url).await;
-                    successor = res.unwrap();
+    let res = send_get_request(url).await;
 
-                }
-        
-                
-           
-    }
-
-    finger_table_ref.sort_by_key(|finger| finger.1.id);
-
+    let successor = res.unwrap();
     let succesor_id = Node::hash_function(successor.clone());
     let suc_node = Node::new(succesor_id, successor.clone());
 
-        
-        for finger in finger_table_ref.iter_mut(){
-            if finger.1.id < succesor_id {
-                finger.0 = succesor_id;
-                finger.1.ip = successor.clone();
-                finger.1.id = succesor_id;
-                break;
-               
-            }
-        }
+  
 
-        println!("finger_table_ref {:?}", finger_table_ref);
+    finger_table_ref[0].1.ip = successor.clone();
+        finger_table_ref[0].1.id = succesor_id;
     
     
+        for (i, finger) in finger_table_ref.iter_mut().enumerate() {
+            if i == 0 {
+                continue;
+            }
+            let best_succ = Node::get_best_successor(finger.0, node_ref.id, finger.1.clone(), suc_node.clone());
+            finger.1.ip = best_succ.ip;
+            finger.1.id = best_succ.id;
+        }
+    
+            // println!("node_ref {:?}", node_ref.clone());
+            // println!("succesor {:?}", suc_node);
+            // println!("finger_table_ref {:?}", finger_table_ref);
 
     let url = format!("http://{}/neighbors", successor);
     let res = send_get_request(url).await;
 
-    println!("res {:?}", res);
+
 
     let neighbors: Vec<String> = serde_json::from_str(&res.unwrap()).unwrap();
 
-    let mut prev_node_ref = prev_node.write().await;
 
-    prev_node_ref.ip = neighbors[0].clone();
-    prev_node_ref.id = Node::hash_function(neighbors[0].clone());
+    
+    println!("neighbors {:?}", neighbors);
 
-    let url = format!("http://{}/notify_pred/{}", successor, node_ref.ip);
+    if neighbors[0] == "" {
+        prev_node_ref.ip = neighbors[1].clone();
+        prev_node_ref.id = Node::hash_function(neighbors[1].clone());
+    
+    }
+    else {
+        
+            prev_node_ref.ip = neighbors[0].clone();
+            prev_node_ref.id = Node::hash_function(neighbors[0].clone());
+    }
+
+    let node_ref_id = node_ref.id;
+
+    Node::_fill_hashmap(&mut node_ref, prev_node_ref.id, node_ref_id);
+
+
+    println!("joined node prev {:?} and succesor {:?}", prev_node_ref, suc_node);
+
+    let url = format!("http://{}/notify_succ/{}", successor, node_ref.ip);
     let res = send_put_request(url, node_ref.ip.clone()).await;
 
 
+    let url = format!("http://{}/notify_pred/{}", prev_node_ref.ip, node_ref.ip);
+    let res = send_put_request(url, node_ref.ip.clone()).await;
 
 
 
@@ -536,79 +555,147 @@ async fn post_join_ring(query: web::Query<JoinQuery>, node_data: web::Data<Arc<R
 
  }
 
- #[get("/succesor/{node_id}")]
- async fn get_succ(    node_id: web::Path<String>,
-    finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>,) -> impl Responder
+ 
+
+ #[get("/succesor/{node_ip}")]
+ async fn get_succ(    node_ip: web::Path<String>,
+    finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>, node_data: web::Data<Arc<RwLock<Node>>>,     prev_node: web::Data<Arc<RwLock<NodePrev>>>,) -> impl Responder
  {
 
+        
+    let mut node_ref = node_data.write().await;
+    let node_ref_id = node_ref.id;
     let finger_table_ref = finger_table.read().await;
 
-    let mut sorted_finger_table = finger_table_ref.clone();
-    sorted_finger_table.sort_by_key(|finger| Node::hash_function(finger.1.ip.to_string()));
+   
 
-    let mut succesor = String::new();
+    let node_id = Node::hash_function(node_ip.to_string());
 
-    let node_id_int = node_id.parse::<u32>().unwrap();
+    println!("node_id {:?}, node_ip {:?} and keys_resp  {:?} ", node_ref_id, node_ref.ip, node_ref.resp_keys);
 
-    for finger in sorted_finger_table.iter() {
-        if finger.1.id >= node_id_int {
-            succesor = finger.1.ip.to_string();
-           
+    let mut resp = 0;
+
+    for keys in node_ref.resp_keys.iter() {
+   
+        if *keys == node_id {
+          
+            resp = 1;
         }
     }
 
-   if succesor.is_empty() {
-       let url = format!("http://{}/succesor/{}", sorted_finger_table[sorted_finger_table.len() - 1].1.ip, node_id);
-         let res = send_get_request(url).await;
-         HttpResponse::Ok().body(res.unwrap())
-   } else {
-       HttpResponse::Ok().body(succesor)
-   }
+    if resp == 1 {
+
+
+        HttpResponse::Ok().body(node_ref.ip.clone())
+    } else {
+        let mut sorted_finger_table = finger_table_ref.clone();
+        sorted_finger_table.sort_by_key(|finger| Node::hash_function(finger.1.ip.to_string()));
+
+        let mut succesor = String::new();
+
+        let node_id_int = node_id;
+
+        // println!("sorted_finger_table {:?}", sorted_finger_table);
+
+        for finger in sorted_finger_table.iter() {
+            if finger.1.id >= node_id_int {
+                succesor = finger.1.ip.to_string();
+                break;
+            
+            }
+        }   
+
+        // println!("succesor {:?}", succesor);
+
+        if succesor.is_empty() {
+            let url = format!("http://{}/succesor/{}", sorted_finger_table[0].1.ip, node_id);
+            let res = send_get_request(url).await;
+            HttpResponse::Ok().body(res.unwrap())
+        } else {
+            HttpResponse::Ok().body(succesor)
+        }
+    }
 
 
  }
 
+
+ #[put("/notify_succ/{node_ip}")]
+async fn put_notify_succ(  node_ip: web::Path<String>,
+    prev_node: web::Data<Arc<RwLock<NodePrev>>>,
+    node_data: web::Data<Arc<RwLock<Node>>>,
+ ) -> impl Responder
+ {
+
+    let mut prev_node_ref = prev_node.write().await;
+    prev_node_ref.ip = node_ip.to_string();
+    prev_node_ref.id = Node::hash_function(node_ip.to_string());
+
+    let mut node_ref = node_data.write().await;
+
+    node_ref.resp_keys.clear();
+
+    let node_ref_id = node_ref.id;
+
+    Node::_fill_hashmap(&mut node_ref, prev_node_ref.id, node_ref_id);
+
+    // println!("node_keys in notify {:?}", node_ref.resp_keys);
+
+    
+
+    HttpResponse::Ok().body("ok")
+
+
+
+ 
+ }
+
+
+
 #[put("/notify_pred/{node_ip}")]
 async fn put_notify(  node_ip: web::Path<String>,
     finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>,
-    prev_node: web::Data<Arc<RwLock<Node>>>,
-    node_data: web::Data<Arc<RwLock<Node>>>,
-    num_node_data: web::Data<Arc<RwLock<i32>>>, ) -> impl Responder
+    prev_node: web::Data<Arc<RwLock<NodePrev>>>,
+    node_data: web::Data<Arc<RwLock<Node>>>, ) -> impl Responder
  {
 
     let mut finger_table_ref = finger_table.write().await;
-    let mut num_node_data_ref = num_node_data.write().await;
-    *num_node_data_ref += 1;
+    let node_ref = node_data.read().await;
 
-
-    finger_table_ref.sort_by_key(|finger| finger.1.id);
-
-    let successor_id = Node::hash_function(node_ip.to_string());
+    println!("node_ip {:?}", node_ip);
 
    
-        for finger in finger_table_ref.iter_mut().rev() {
-            if finger.1.id < successor_id {
-                finger.0 = successor_id;
-                finger.1.ip = node_ip.to_string();
-                finger.1.id = successor_id;
-                
-            }
-        }
 
+    let succesor_id = Node::hash_function(node_ip.to_string());
+    let suc_node = Node::new(succesor_id, node_ip.to_string());
+
+    for finger in finger_table_ref.iter_mut() {
+        let best_succ = Node::get_best_successor(finger.0, node_ref.id, finger.1.clone(), suc_node.clone());
+        finger.1.ip = best_succ.ip;
+        finger.1.id = best_succ.id;
+
+    }
+
+    // println!("finger_table_ref 2 {:?}", finger_table_ref);
 
     let mut prev_node_ref = prev_node.write().await;
-    let mut node_ref = node_data.write().await;
+    
 
-    if prev_node_ref.id == node_ref.id{
+    // println!("node_ref {:?}", node_ref.clone());
+    // println!("prev_node_ref {:?}", prev_node_ref.clone());
+    // println!("succesor_id {:?}", succesor_id);
+
+    if prev_node_ref.ip == ""{
         prev_node_ref.ip = node_ip.to_string();
-        prev_node_ref.id = successor_id;
+        prev_node_ref.id = succesor_id;
         HttpResponse::Ok().body("ok")
     }
-    else if prev_node_ref.id == successor_id  {
+    else if prev_node_ref.id == succesor_id  {
         HttpResponse::Ok().body("ok")
     }
     else {
         let url = format!("http://{}/notify_pred/{}", prev_node_ref.ip, node_ip);
+        println!("url {:?}", url);
         let res = send_put_request(url, node_ip.to_string()).await;
         HttpResponse::Ok().body("ok")
     }
