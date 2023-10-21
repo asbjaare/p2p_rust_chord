@@ -27,14 +27,30 @@ struct NodeInfo {
     others: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct JoinQuery {
     nprime: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct LeaveQuery {
+    predecessor: String,
+    leaving_node: String,
+}
+
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SuccQuery {
+    new_succesor: String,
+    leaving_node: String,
+}
+
+
 
 async fn send_put_request(url: String, data: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client = Client::new();
+
+    println!("url {:?} and data {:?}", url, data);
 
     let uri = url.parse::<Uri>()?;
 
@@ -45,6 +61,52 @@ async fn send_put_request(url: String, data: String) -> Result<(), Box<dyn std::
         .body(Body::from(data))?;
 
     let _res = client.request(req).await?;
+
+    println!("res {:?}", _res);
+
+    Ok(())
+}
+
+async fn send_put_request_JSON_succ_leave(url: String, data: LeaveQuery) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let client = Client::new();
+
+    println!("url {:?} and data {:?}", url, data);
+
+    let uri = url.parse::<Uri>()?;
+
+    let json_data = serde_json::to_string(&data)?;
+
+    let req = Request::builder()
+        .method("PUT")
+        .uri(uri)
+        .header("content-type", "application/json")
+        .body(Body::from(json_data))?;
+
+    let _res = client.request(req).await?;
+
+    println!("res {:?}", _res);
+
+    Ok(())
+}
+
+async fn send_put_request_JSON_pred_leave(url: String, data: SuccQuery) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let client = Client::new();
+
+    println!("url {:?} and data {:?}", url, data);
+
+    let uri = url.parse::<Uri>()?;
+
+    let json_data = serde_json::to_string(&data)?;
+
+    let req = Request::builder()
+        .method("PUT")
+        .uri(uri)
+        .header("content-type", "application/json")
+        .body(Body::from(json_data))?;
+
+    let _res = client.request(req).await?;
+
+    println!("res {:?}", _res);
 
     Ok(())
 }
@@ -284,6 +346,10 @@ async fn main() -> std::io::Result<()> {
                 .service(put_notify)
                 .service(get_succ)
                 .service(put_notify_succ)
+                .service(get_reps_keys)
+                .service(put_notify_succ_leave)
+                .service(put_notify_pred_leave)
+                .service(post_leave)
         })
         .workers(8)
         .bind(server_addr)?
@@ -555,11 +621,140 @@ async fn post_join_ring(query: web::Query<JoinQuery>, node_data: web::Data<Arc<R
 
  }
 
+
+ #[post("/leave")]
+ async fn post_leave(node_data: web::Data<Arc<RwLock<Node>>>, finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>, previous_node_data: web::Data<Arc<RwLock<NodePrev>>>) -> impl Responder
+ {  
+
+    let mut node_ref = node_data.write().await;
+    let mut finger_table_ref = finger_table.write().await;
+    let mut prev_node_ref = previous_node_data.write().await;
+
+    let mut node_ref_id = node_ref.id;
+    let mut prev_node_ref_id = prev_node_ref.id;
+    
+    node_ref.resp_keys.clear();
+    node_ref.resp_keys = (0..CLUSTER_SIZE).collect();
+
+    let url = format!("http://{}/notify_succ_leave", finger_table_ref[0].1.ip);
+
+    let info: LeaveQuery = LeaveQuery {
+        predecessor: prev_node_ref.ip.clone(),
+        leaving_node: node_ref.ip.clone(),
+    };
+
+    let res = send_put_request_JSON_succ_leave(url, info).await;
+
+    let info_succ = SuccQuery {
+        new_succesor: finger_table_ref[0].1.ip.clone(),
+        leaving_node: node_ref.ip.clone(),
+    };
+
+    let url = format!("http://{}/notify_pred_leave", prev_node_ref.ip);
+    let res = send_put_request_JSON_pred_leave(url, info_succ).await;
+
+    let mut new_finger_table = Vec::with_capacity(KEY_SIZE as usize);
+
+    for i in 0..KEY_SIZE {
+        let finger_id  = (node_ref_id + 2u32.pow(i)) % CLUSTER_SIZE;
+        let finger_node = node_ref.clone();
+        new_finger_table.push((finger_id, finger_node));
+    }
+
+
+
+
+    prev_node_ref.ip = "".to_string();
+    prev_node_ref.id = 0;
+
+
+
+    HttpResponse::Ok().body("ok")
+ }
+
+ #[put("/notify_succ_leave")]
+ async fn put_notify_succ_leave(info: web::Json<LeaveQuery>,node_data: web::Data<Arc<RwLock<Node>>>, finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>, previous_node_data: web::Data<Arc<RwLock<NodePrev>>>) -> impl Responder
+ {
+
+
+    let mut node_ref = node_data.write().await;
+    let mut finger_table_ref = finger_table.write().await;
+    let mut prev_node_ref = previous_node_data.write().await;
+
+
+    let mut node_ref_id = node_ref.id;
+    let  leaving_node_id = Node::hash_function(info.leaving_node.clone());
+
+
+    prev_node_ref.id= Node::hash_function(info.predecessor.clone());
+    prev_node_ref.ip = info.predecessor.clone();
+
+    node_ref.resp_keys.clear();
+    Node::_fill_hashmap(&mut node_ref, prev_node_ref.id, node_ref_id);
+
+
+    for finger in finger_table_ref.iter_mut() {
+
+        if finger.1.id == leaving_node_id {
+            finger.1.id = node_ref.id;
+            finger.1.ip = node_ref.ip.clone();
+        }
+
+    }
+
+    println!("info {:?}", info);
+
+    println!("succ {:?}", finger_table_ref[0].1.ip);
+    println!("prev {:?}", prev_node_ref.ip);
+
+    HttpResponse::Ok().body("ok")
+ }
  
+
+ #[put("/notify_pred_leave")]
+ async fn put_notify_pred_leave(info: web::Json<SuccQuery>,node_data: web::Data<Arc<RwLock<Node>>>, finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>, previous_node_data: web::Data<Arc<RwLock<NodePrev>>>) -> impl Responder
+ {
+
+    let mut node_ref = node_data.write().await;
+    let mut finger_table_ref = finger_table.write().await;
+    let mut prev_node_ref = previous_node_data.write().await;
+
+    let mut node_ref_id = node_ref.id;
+    let  leaving_node_id = Node::hash_function(info.leaving_node.clone());
+    let new_succ = Node::new(Node::hash_function(info.new_succesor.clone()), info.new_succesor.clone());
+
+    
+    if new_succ.id == node_ref.id{
+        HttpResponse::Ok().body("ok")
+        
+    }
+    else {
+    
+        finger_table_ref[0].1.id = new_succ.id;
+        finger_table_ref[0].1.ip = new_succ.ip.clone();
+    
+        for (i, finger) in finger_table_ref.iter_mut().enumerate() {
+            if i == 0 {
+                continue;
+            }
+            
+            if finger.1.id == leaving_node_id {
+                finger.1.id = new_succ.id;
+                finger.1.ip = new_succ.ip.clone();
+            }
+        }
+        let url = format!("http://{}/notify_pred_leave", prev_node_ref.ip);
+        let res = send_put_request(url, serde_json::to_string(&info).unwrap()).await;
+        HttpResponse::Ok().body("ok")
+    }
+
+
+
+ }
 
  #[get("/succesor/{node_ip}")]
  async fn get_succ(    node_ip: web::Path<String>,
-    finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>, node_data: web::Data<Arc<RwLock<Node>>>,     prev_node: web::Data<Arc<RwLock<NodePrev>>>,) -> impl Responder
+    finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>, node_data: web::Data<Arc<RwLock<Node>>>) -> impl Responder
  {
 
         
@@ -706,3 +901,9 @@ async fn put_notify(  node_ip: web::Path<String>,
  
  }
 
+#[get("/reps_keys")]
+async fn get_reps_keys(node_data: web::Data<Arc<RwLock<Node>>>) -> impl Responder {
+    let node_ref = node_data.read().await;
+    let node = &*node_ref;
+    HttpResponse::Ok().json(node.resp_keys.clone())
+}
