@@ -760,9 +760,30 @@ async fn put_notify_pred_leave(
     }
 }
 
-/// Handler for GET requests to /succesor/{node_ip}.
-/// Returns the successor node of the given node IP address.
-/// If the current node is simulating a crash, returns a ServiceUnavailable response.
+/// Retrieves the successor of a given node based on its IP address.
+///
+/// This handler listens for GET requests at the path `/succesor/{node_ip}`. It uses the Chord protocol's
+/// algorithm to determine the successor of the provided node IP.
+///
+/// # Arguments
+///
+/// * `node_ip` - The IP address of the node for which the successor needs to be found.
+///   This is extracted from the path parameter `{node_ip}`.
+/// * `finger_table` - A shared reference to the finger table, which is a data structure
+///   used in the Chord protocol to maintain references to other nodes in the system.
+/// * `node_data` - Shared data about the current node, including its IP address and ID.
+/// * `crash_flag` - A shared atomic boolean flag to check if the node is simulating a crash.
+///
+/// # Returns
+///
+/// If the `crash_flag` is set (indicating a simulated crash), the function returns a "Service Unavailable"
+/// HTTP response.
+///
+/// If the provided `node_ip` belongs to the current node or if its ID falls under the set of keys the current
+/// node is responsible for (`resp_keys`), the handler returns the IP address of the current node.
+///
+/// Otherwise, it recursively finds the successor by making GET requests to other nodes' `/succesor/{node_ip}`
+/// endpoints and returns the resultant IP address.
 #[get("/succesor/{node_ip}")]
 async fn get_succ(
     node_ip: web::Path<String>,
