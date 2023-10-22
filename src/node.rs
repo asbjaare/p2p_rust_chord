@@ -8,7 +8,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use serde_json::Value;
 
-const KEY_SIZE: u32 = 8;
+const KEY_SIZE: u32 = 20;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
 
 
@@ -200,7 +200,7 @@ pub fn _get_previous_node(node_id: u32, number_of_nodes: u32) -> Node {
 /// * `node` - A mutable reference to the node whose hashmap is to be filled.
 /// * `previous_id` - The id of the previous node in the ring.
 /// * `current_id` - The id of the current node in the ring.
-pub fn _fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
+pub async fn fill_hashmap(node: &mut Node, previous_id: u32, current_id: u32) {
 
 
         
@@ -248,7 +248,7 @@ pub async fn find_succesor_to_joining_node(node_id: u32, finger_table: Vec<Strin
 
 
 
-pub fn is_between(id: u32, start: u32, end: u32) -> bool {
+pub async fn is_between(id: u32, start: u32, end: u32) -> bool {
     if start <= end {
         id > start && id <= end
     } else {
@@ -256,7 +256,7 @@ pub fn is_between(id: u32, start: u32, end: u32) -> bool {
     }
 }
 
-pub fn get_best_successor(key_id: u32, node_id: u32, succ1_node: Node, succ2_node: Node) -> Node {
+pub async fn get_best_successor(key_id: u32, node_id: u32, succ1_node: Node, succ2_node: Node) -> Node {
     let dist1 = if succ1_node.id >= node_id {
         succ1_node.id - key_id
     } else {
