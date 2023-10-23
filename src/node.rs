@@ -270,61 +270,121 @@ impl Node {
     /// ### Returns
     ///
     /// A `String` representing the IP address of the successor node.
-    pub async fn find_succesor_key(
+    pub async fn find_successor_key(
         key: u32,
         finger_table: Vec<(u32, Node)>,
         current_id: u32,
-    ) -> String {
-        let mut succesor = String::new();
+    ) -> Option<String> {
+        let mut successor = String::new();
 
-        let succesor_id = finger_table[0].1.id;
+        let successor_id = finger_table[0].1.id;
 
-        if succesor_id < current_id {
+        if successor_id < current_id {
             for i in current_id..=CLUSTER_SIZE {
                 if i == key {
-                    succesor = finger_table[0].1.ip.clone();
+                    successor = finger_table[0].1.ip.clone();
                     break;
                 }
             }
 
-            if succesor.is_empty() {
-                for i in 0..=succesor_id {
+            if successor.is_empty() {
+                for i in 0..=successor_id {
                     if i == key {
-                        succesor = finger_table[0].1.ip.clone();
+                        successor = finger_table[0].1.ip.clone();
                         break;
                     }
                 }
             }
         } else {
-            for i in current_id..succesor_id {
+            for i in current_id..successor_id {
                 if i == key {
-                    succesor = finger_table[0].1.ip.clone();
+                    successor = finger_table[0].1.ip.clone();
                     break;
                 }
             }
         }
 
-        //sort the finger table by id
+        // Sort the finger table by id
         let mut sorted_finger_table = finger_table.clone();
         sorted_finger_table.sort_by_key(|finger| finger.1.id);
 
-        if succesor.is_empty() {
+        if successor.is_empty() {
             for finger in sorted_finger_table.iter() {
                 if finger.1.id <= key {
-                    // println!("Finger: {:?}", finger);
-                    succesor = finger.1.ip.clone();
+                    successor = finger.1.ip.clone();
                 }
             }
         }
 
-        if succesor.is_empty() {
-            succesor = sorted_finger_table[sorted_finger_table.len() - 1]
+        if successor.is_empty() {
+            successor = sorted_finger_table[sorted_finger_table.len() - 1]
                 .1
                 .ip
                 .clone();
         }
-        succesor
+
+        if successor.is_empty() {
+            None
+        } else {
+            Some(successor)
+        }
     }
+
+    // pub async fn find_succesor_key(
+    //     key: u32,
+    //     finger_table: Vec<(u32, Node)>,
+    //     current_id: u32,
+    // ) -> String {
+    //     let mut succesor = String::new();
+
+    //     let succesor_id = finger_table[0].1.id;
+
+    //     if succesor_id < current_id {
+    //         for i in current_id..=CLUSTER_SIZE {
+    //             if i == key {
+    //                 succesor = finger_table[0].1.ip.clone();
+    //                 break;
+    //             }
+    //         }
+
+    //         if succesor.is_empty() {
+    //             for i in 0..=succesor_id {
+    //                 if i == key {
+    //                     succesor = finger_table[0].1.ip.clone();
+    //                     break;
+    //                 }
+    //             }
+    //         }
+    //     } else {
+    //         for i in current_id..succesor_id {
+    //             if i == key {
+    //                 succesor = finger_table[0].1.ip.clone();
+    //                 break;
+    //             }
+    //         }
+    //     }
+
+    //     //sort the finger table by id
+    //     let mut sorted_finger_table = finger_table.clone();
+    //     sorted_finger_table.sort_by_key(|finger| finger.1.id);
+
+    //     if succesor.is_empty() {
+    //         for finger in sorted_finger_table.iter() {
+    //             if finger.1.id <= key {
+    //                 // println!("Finger: {:?}", finger);
+    //                 succesor = finger.1.ip.clone();
+    //             }
+    //         }
+    //     }
+
+    //     if succesor.is_empty() {
+    //         succesor = sorted_finger_table[sorted_finger_table.len() - 1]
+    //             .1
+    //             .ip
+    //             .clone();
+    //     }
+    //     succesor
+    // }
 }
 
 /// Implements the `Hash` trait for the `Node` struct.

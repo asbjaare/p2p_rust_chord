@@ -310,7 +310,7 @@ async fn main() -> std::io::Result<()> {
             .service(get_node_info)
             .service(post_join_ring)
             .service(put_notify)
-            .service(get_succ)
+            .service(get_zucc)
             .service(put_notify_succ)
             .service(get_reps_keys)
             .service(put_notify_succ_leave)
@@ -344,7 +344,7 @@ async fn index(
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
-        HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
 
     let finger_table = finger_table.read().await;
@@ -357,19 +357,33 @@ async fn index(
     HttpResponse::Ok().json(ip_addr)
 }
 
-/// Handles PUT requests for a specific key in the storage.
-/// If the key exists, updates the value. Otherwise, sends the request to the successor node.
+/// Handler to store or update the value associated with a given key in the Chord ring's distributed storage.
 ///
-/// ### Arguments
+/// This handler listens for PUT requests at the path `/storage/{key}`. When called, it determines
+/// if the current node is responsible for the key. If so, it stores or updates the value for the key
+/// in its local storage. If not, it forwards the request to the appropriate node using
+/// the finger table's information.
 ///
-/// * `key` - A String representing the key to be updated or inserted.
-/// * `data` - A String representing the value to be updated or inserted.
-/// * `node_data` - A web::Data<RwLock<Node>> representing the current node's data.
-/// * `finger_table` - A web::Data<RwLock<Vec<(u32, Node)>>> representing the current node's finger table.
+/// # Arguments
 ///
-/// ### Returns
+/// * `key` - The key for which the value needs to be stored or updated, provided as a path parameter in the request URL.
+/// * `data` - The value to be associated with the key, provided as the request body.
+/// * `node_data` - Shared data about the current node, including its IP address, ID, the set of keys
+///   it's responsible for (`resp_keys`), and its local storage (`hashmap`).
+/// * `finger_table` - A shared reference to the finger table, a crucial data structure in the Chord protocol
+///   that maintains references to other nodes in the system.
+/// * `crash_flag` - A shared atomic boolean flag to check if the node is simulating a crash.
 ///
-/// An HttpResponse indicating whether the item was updated or inserted successfully.
+/// # Returns
+///
+/// If the `crash_flag` is set (indicating a simulated crash), the function returns a "Service Unavailable"
+/// HTTP response.
+///
+/// If the node is responsible for the key, the value is stored or updated in its local storage, and an "OK"
+/// HTTP response is returned indicating the status of the operation (either "updated" or "inserted").
+///
+/// If the node is not responsible for the key, the request is forwarded to the appropriate node, and
+/// an "OK" HTTP response is returned indicating that the item was inserted.
 #[put("/storage/{key}")]
 async fn item_put(
     key: web::Path<String>,
@@ -379,14 +393,12 @@ async fn item_put(
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
-        HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
-    let hash_ref = &key;
-    let hashed_key = Node::hash_function(hash_ref.to_string());
+
+    let hashed_key = Node::hash_function(key.to_string());
 
     let mut node_ref = node_data.write().await;
-
-    // let mut node = &node_ref;
 
     if node_ref.resp_keys.contains(&hashed_key) {
         node_ref.hashmap.insert(key.to_string(), data);
@@ -396,28 +408,49 @@ async fn item_put(
         let node_ref = node_data.read().await;
         let node = &*node_ref;
 
-        let succesor =
-            Node::find_succesor_key(hashed_key, finger_table.read().await.clone(), node.id).await;
-
-        let url = format!("http://{}/storage/{}", succesor, key);
-
-        let _res = send_put_request(url, data).await;
-
-        HttpResponse::Ok().body(format!("Item {:?} inserted", key))
+        match Node::find_successor_key(hashed_key, finger_table.read().await.clone(), node.id).await
+        {
+            Some(successor) => {
+                let url = format!("http://{}/storage/{}", successor, key);
+                match send_put_request(url, data).await {
+                    Ok(_) => HttpResponse::Ok().body(format!("Item {:?} inserted", key)),
+                    Err(_) => {
+                        HttpResponse::InternalServerError().body("Failed to put data to successor")
+                    }
+                }
+            }
+            None => HttpResponse::ServiceUnavailable().body("Successor not found"),
+        }
     }
 }
 
-/// Handler for GET requests to retrieve an item from the node's storage.
+/// Handler to retrieve the value associated with a given key in the Chord ring's distributed storage.
 ///
-/// ### Arguments
+/// This handler listens for GET requests at the path `/storage/{key}`. When called, it determines
+/// if the current node is responsible for the key. If so, it retrieves the value for the key
+/// from its local storage. If not, it forwards the request to the appropriate node using
+/// the finger table's information.
 ///
-/// * `key` - The key of the item to retrieve.
-/// * `node_data` - The node's data, containing a RwLock-protected hashmap of stored items.
-/// * `finger_table` - The node's finger table, containing a RwLock-protected vector of finger table entries.
+/// # Arguments
 ///
-/// ### Returns
+/// * `key` - The key for which the value needs to be retrieved, provided as a path parameter in the request URL.
+/// * `node_data` - Shared data about the current node, including its IP address, ID, the set of keys
+///   it's responsible for (`resp_keys`), and its local storage (`hashmap`).
+/// * `finger_table` - A shared reference to the finger table, a crucial data structure in the Chord protocol
+///   that maintains references to other nodes in the system.
+/// * `crash_flag` - A shared atomic boolean flag to check if the node is simulating a crash.
 ///
-/// Returns an HTTP response with the retrieved item if it exists, or a 404 Not Found response if it does not.
+/// # Returns
+///
+/// If the `crash_flag` is set (indicating a simulated crash), the function returns a "Service Unavailable"
+/// HTTP response.
+///
+/// If the node is responsible for the key and the key exists in its local storage, the value associated
+/// with the key is returned in an "OK" HTTP response.
+///
+/// If the node is not responsible for the key, the request is forwarded to the appropriate node.
+/// If the key is not found in the system, a "Not Found" HTTP response is returned.
+/// In case of any unexpected error, an "Internal Server Error" HTTP response is returned.
 #[get("/storage/{key}")]
 async fn item_get(
     key: web::Path<String>,
@@ -426,13 +459,13 @@ async fn item_get(
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
-        HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
+
     let node_ref = node_data.read().await;
 
     let node = &*node_ref;
-    let hash_ref = &key;
-    let hashed_key = Node::hash_function(hash_ref.to_string());
+    let hashed_key = Node::hash_function(key.to_string());
 
     if node.resp_keys.contains(&hashed_key) {
         if let Some(value) = node.hashmap.get(&key.to_string()) {
@@ -441,26 +474,47 @@ async fn item_get(
             HttpResponse::NotFound().body("Key not found")
         }
     } else {
-        let succesor =
-            Node::find_succesor_key(hashed_key, finger_table.read().await.clone(), node.id).await;
-
-        let url = format!("http://{}/storage/{}", succesor, key);
-        let _res = send_get_request(url).await;
-
-        if let Ok(response) = _res {
-            if response == "Key not found" {
-                HttpResponse::NotFound().body("Key not found")
-            } else {
-                HttpResponse::Ok().body(response)
+        match Node::find_successor_key(hashed_key, finger_table.read().await.clone(), node.id).await
+        {
+            Some(successor) => {
+                let url = format!("http://{}/storage/{}", successor, key);
+                match send_get_request(url).await {
+                    Ok(response) => {
+                        if response == "Key not found" {
+                            HttpResponse::NotFound().body("Key not found")
+                        } else {
+                            HttpResponse::Ok().body(response)
+                        }
+                    }
+                    Err(_) => HttpResponse::InternalServerError().finish(),
+                }
             }
-        } else {
-            HttpResponse::InternalServerError().finish()
+            None => HttpResponse::ServiceUnavailable().body("Successor not found"),
         }
     }
 }
 
-/// Handler function for GET requests to "/node-info".
-/// Returns information about the current node, including its ID, successor, and other nodes in the finger table.
+/// Handler to retrieve information about the current node in the Chord ring.
+///
+/// This handler listens for GET requests at the path `/node-info`. When called, it provides
+/// key information about the current node, including its hash ID, its immediate successor in the Chord ring,
+/// and references to other nodes maintained in its finger table.
+///
+/// # Arguments
+///
+/// * `node_data` - Shared data about the current node, including its IP address, ID, and the set of keys
+///   it's responsible for (`resp_keys`).
+/// * `finger_table` - A shared reference to the finger table, a crucial data structure in the Chord protocol
+///   that maintains references to other nodes in the system.
+/// * `crash_flag` - A shared atomic boolean flag to check if the node is simulating a crash.
+///
+/// # Returns
+///
+/// If the `crash_flag` is set (indicating a simulated crash), the function returns a "Service Unavailable"
+/// HTTP response.
+///
+/// If the node is operational, it returns an "OK" HTTP response with a JSON object representing the
+/// node's hash ID, its immediate successor, and other nodes from its finger table.
 #[get("/node-info")]
 async fn get_node_info(
     node_data: web::Data<Arc<RwLock<Node>>>,
@@ -468,7 +522,7 @@ async fn get_node_info(
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
-        HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
     let node_ref = node_data.read().await;
     let node = &*node_ref;
@@ -493,20 +547,32 @@ async fn get_node_info(
     HttpResponse::Ok().json(node_info)
 }
 
-/// Handles a POST request to join a Chord ring.
+/// Handler for a node to join the Chord ring.
+///
+/// This handler listens for POST requests at the path `/join`. When called, it allows a node
+/// to join an existing Chord ring by finding its appropriate successor and predecessor nodes.
+/// The joining node updates its finger table, retrieves its set of responsible keys, and notifies
+/// its successor and predecessor about its presence.
 ///
 /// # Arguments
 ///
-/// * `query` - A query parameter containing the IP address and port of the node to join the ring.
-/// * `node_data` - A shared state containing the data of the current node.
-/// * `finger_table` - A shared state containing the finger table of the current node.
-/// * `previous_node_data` - A shared state containing the data of the previous node in the ring.
-/// * `num_node_data` - A shared state containing the number of nodes in the ring.
-/// * `crash_flag` - A shared state containing a flag indicating whether the node is simulating a crash.
+/// * `query` - Contains query parameters from the HTTP request, specifically the IP address and port
+///   (`nprime`) of an existing node in the Chord ring that will be used as a reference point for the joining process.
+/// * `node_data` - Shared data about the current node, including its IP address, ID, and the set of keys
+///   it's responsible for (`resp_keys`).
+/// * `finger_table` - A shared reference to the finger table, a crucial data structure in the Chord protocol
+///   that maintains references to other nodes in the system.
+/// * `previous_node_data` - Shared data about the current node's predecessor, including its IP address and ID.
+/// * `num_node_data` - A shared counter that keeps track of the number of nodes currently in the Chord ring.
+/// * `crash_flag` - A shared atomic boolean flag to check if the node is simulating a crash.
 ///
 /// # Returns
 ///
-/// An HTTP response indicating whether the node successfully joined the ring.
+/// If the `crash_flag` is set (indicating a simulated crash), the function returns a "Service Unavailable"
+/// HTTP response.
+///
+/// If the joining process is successful, it returns an "OK" HTTP response with a message indicating
+/// that the node has joined the Chord ring.
 #[post("/join")]
 async fn post_join_ring(
     query: web::Query<JoinQuery>,
@@ -517,7 +583,7 @@ async fn post_join_ring(
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
-        HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
     let _ip_and_port: Vec<&str> = query.nprime.split(":").collect();
     // println!("ip_and_port {:?}", ip_and_port);
@@ -613,7 +679,7 @@ async fn post_leave(
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
-        HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
     let mut node_ref = node_data.write().await;
     let mut finger_table_ref = finger_table.write().await;
@@ -675,7 +741,7 @@ async fn put_notify_succ_leave(
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
-        HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
     let mut node_ref = node_data.write().await;
     let mut finger_table_ref = finger_table.write().await;
@@ -727,7 +793,7 @@ async fn put_notify_pred_leave(
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
-        HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
     let node_ref = node_data.write().await;
     let mut finger_table_ref = finger_table.write().await;
@@ -787,37 +853,56 @@ async fn put_notify_pred_leave(
 /// Otherwise, it recursively finds the successor by making GET requests to other nodes' `/succesor/{node_ip}`
 /// endpoints and returns the resultant IP address.
 #[get("/succesor/{node_ip}")]
-async fn get_succ(
+async fn get_zucc(
     node_ip: web::Path<String>,
     finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>,
     node_data: web::Data<Arc<RwLock<Node>>>,
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
-        HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
-    // println!("node_ip in succ GET {:?}", node_ip);
+    // Get the lock on the node data
     let node_ref = node_data.write().await;
+
+    // Get the node id
     let node_ref_id = node_ref.id;
+
+    // Get the lock on the finger table
     let _finger_table_ref = finger_table.read().await;
 
+    // Get the node id of the node_ip
     let node_id = Node::hash_function(node_ip.to_string());
-    // println!("node_id {:?}", node_id);
 
-    // println!("node_id {:?}, node_ip {:?} and keys_resp  {:?} ", node_ref_id, node_ref.ip, node_ref.resp_keys);
-
+    // Check if the node_ip is the current node
     if node_ref.resp_keys.contains(&node_id) {
+        // node is the current node
         HttpResponse::Ok().body(node_ref.ip.clone())
+    // } else {
+    //     // node is not the current node and we need to find the succesor
+    //     let succesor =
+    //         Node::find_succesor_key(node_id, finger_table.read().await.clone(), node_ref_id).await;
+
+    //     let url = format!("http://{}/succesor/{}", succesor, node_ip.to_string());
+    //     let res = send_get_request(url).await;
+
+    //     HttpResponse::Ok().body(res.unwrap())
+    // }
     } else {
-        // println!("succesor {:?}", succesor);
-
-        let succesor =
-            Node::find_succesor_key(node_id, finger_table.read().await.clone(), node_ref_id).await;
-
-        let url = format!("http://{}/succesor/{}", succesor, node_ip.to_string());
-        let res = send_get_request(url).await;
-
-        HttpResponse::Ok().body(res.unwrap())
+        // node is not the current node and we need to find the successor
+        match Node::find_successor_key(node_id, finger_table.read().await.clone(), node_ref_id)
+            .await
+        {
+            Some(successor) => {
+                let url = format!("http://{}/succesor/{}", successor, node_ip.to_string());
+                match send_get_request(url).await {
+                    Ok(res) => HttpResponse::Ok().body(res),
+                    Err(_) => HttpResponse::ServiceUnavailable()
+                        .body("Failed to get response from successor"),
+                }
+            }
+            None => HttpResponse::ServiceUnavailable().body("Successor not found"),
+        }
     }
 }
 
@@ -850,7 +935,7 @@ async fn put_notify_succ(
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
-        HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
     let mut prev_node_ref = prev_node.write().await;
     prev_node_ref.ip = node_ip.to_string();
@@ -903,7 +988,7 @@ async fn put_notify(
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
-        HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
     let mut finger_table_ref = finger_table.write().await;
     let node_ref = node_data.read().await;
@@ -962,7 +1047,7 @@ async fn get_reps_keys(
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
-        HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
     let node_ref = node_data.read().await;
     let node = &*node_ref;
@@ -979,7 +1064,8 @@ async fn get_reps_keys(
 ///
 /// Returns an HTTP response with a message indicating that the crash simulation has started.
 #[post("/sim-crash")]
-async fn post_sim_crash(crash_flag: web::Data<Arc<AtomicBool>>) -> impl Responder {
+async fn post_sim_crash(crash_flag: web::Data<Arc<RwLock<AtomicBool>>>) -> impl Responder {
+    let crash_flag = crash_flag.write().await;
     crash_flag.store(true, Ordering::SeqCst);
     HttpResponse::Ok().body("Crash simulation started")
 }
@@ -994,7 +1080,8 @@ async fn post_sim_crash(crash_flag: web::Data<Arc<AtomicBool>>) -> impl Responde
 ///
 /// Returns an HTTP response with a message indicating that the crash simulation has stopped.
 #[post("/sim-recover")]
-async fn post_sim_recover(crash_flag: web::Data<Arc<AtomicBool>>) -> impl Responder {
+async fn post_sim_recover(crash_flag: web::Data<Arc<RwLock<AtomicBool>>>) -> impl Responder {
+    let crash_flag = crash_flag.write().await;
     crash_flag.store(false, Ordering::SeqCst);
     HttpResponse::Ok().body("Crash simulation stopped")
 }
