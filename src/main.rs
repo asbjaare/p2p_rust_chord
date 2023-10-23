@@ -116,7 +116,7 @@ async fn send_put_request(
 ///     assert!(result.is_ok());
 /// }
 /// ```
-async fn send_put_request_JSON_succ_leave(
+async fn send_put_request_json_succ_leave(
     url: String,
     data: LeaveQuery,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -152,7 +152,7 @@ async fn send_put_request_JSON_succ_leave(
 ///
 /// Returns a `Result` with an empty `Ok` value if the request was successful, or a `Box` containing
 /// a `dyn` error if an error occurred.
-async fn send_put_request_JSON_pred_leave(
+async fn send_put_request_json_pred_leave(
     url: String,
     data: SuccQuery,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -470,7 +470,7 @@ async fn get_node_info(
     }
     let node_ref = node_data.read().await;
     let node = &*node_ref;
-    let mut finger_table_ref = finger_table.read().await;
+    let finger_table_ref = finger_table.read().await;
     let node_hash = node.id;
     let mut successor: String = "".to_string();
     let mut other = Vec::new();
@@ -517,7 +517,7 @@ async fn post_join_ring(
     if crash_flag.read().await.load(Ordering::Relaxed) {
         HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
-    let ip_and_port: Vec<&str> = query.nprime.split(":").collect();
+    let _ip_and_port: Vec<&str> = query.nprime.split(":").collect();
     // println!("ip_and_port {:?}", ip_and_port);
 
     let mut node_ref = node_data.write().await;
@@ -583,10 +583,10 @@ async fn post_join_ring(
     // println!("joined node prev {:?} and succesor {:?}", prev_node_ref, suc_node);
 
     let url = format!("http://{}/notify_succ/{}", successor, node_ref.ip);
-    let res = send_put_request(url, node_ref.ip.clone()).await;
+    let _res = send_put_request(url, node_ref.ip.clone()).await;
 
     let url = format!("http://{}/notify_pred/{}", prev_node_ref.ip, node_ref.ip);
-    let res = send_put_request(url, node_ref.ip.clone()).await;
+    let _res = send_put_request(url, node_ref.ip.clone()).await;
 
     HttpResponse::Ok().body("node joined")
 }
@@ -617,8 +617,8 @@ async fn post_leave(
     let mut finger_table_ref = finger_table.write().await;
     let mut prev_node_ref = previous_node_data.write().await;
 
-    let mut node_ref_id = node_ref.id;
-    let mut prev_node_ref_id = prev_node_ref.id;
+    let _node_ref_id = node_ref.id;
+    let _prev_node_ref_id = prev_node_ref.id;
 
     node_ref.resp_keys.clear();
     node_ref.resp_keys = (0..CLUSTER_SIZE).collect();
@@ -630,7 +630,7 @@ async fn post_leave(
         leaving_node: node_ref.ip.clone(),
     };
 
-    let res = send_put_request_JSON_succ_leave(url, info).await;
+    let _res = send_put_request_json_succ_leave(url, info).await;
 
     let info_succ = SuccQuery {
         new_succesor: finger_table_ref[0].1.ip.clone(),
@@ -638,7 +638,7 @@ async fn post_leave(
     };
 
     let url = format!("http://{}/notify_pred_leave", prev_node_ref.ip);
-    let res = send_put_request_JSON_pred_leave(url, info_succ).await;
+    let _res = send_put_request_json_pred_leave(url, info_succ).await;
 
     for finger in finger_table_ref.iter_mut() {
         finger.1.id = node_ref.id;
@@ -679,7 +679,7 @@ async fn put_notify_succ_leave(
     let mut finger_table_ref = finger_table.write().await;
     let mut prev_node_ref = previous_node_data.write().await;
 
-    let mut node_ref_id = node_ref.id;
+    let node_ref_id = node_ref.id;
     let leaving_node_id = Node::hash_function(info.leaving_node.clone());
 
     prev_node_ref.id = Node::hash_function(info.predecessor.clone());
@@ -727,11 +727,11 @@ async fn put_notify_pred_leave(
     if crash_flag.read().await.load(Ordering::Relaxed) {
         HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
-    let mut node_ref = node_data.write().await;
+    let node_ref = node_data.write().await;
     let mut finger_table_ref = finger_table.write().await;
-    let mut prev_node_ref = previous_node_data.write().await;
+    let prev_node_ref = previous_node_data.write().await;
 
-    let mut node_ref_id = node_ref.id;
+    let _node_ref_id = node_ref.id;
     let leaving_node_id = Node::hash_function(info.leaving_node.clone());
     let new_succ = Node::new(
         Node::hash_function(info.new_succesor.clone()),
@@ -755,7 +755,7 @@ async fn put_notify_pred_leave(
             }
         }
         let url = format!("http://{}/notify_pred_leave", prev_node_ref.ip);
-        let res = send_put_request(url, serde_json::to_string(&info).unwrap()).await;
+        let _res = send_put_request(url, serde_json::to_string(&info).unwrap()).await;
         HttpResponse::Ok().body("ok")
     }
 }
@@ -795,9 +795,9 @@ async fn get_succ(
         HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
     }
     // println!("node_ip in succ GET {:?}", node_ip);
-    let mut node_ref = node_data.write().await;
+    let node_ref = node_data.write().await;
     let node_ref_id = node_ref.id;
-    let finger_table_ref = finger_table.read().await;
+    let _finger_table_ref = finger_table.read().await;
 
     let node_id = Node::hash_function(node_ip.to_string());
     // println!("node_id {:?}", node_id);
@@ -819,18 +819,27 @@ async fn get_succ(
     }
 }
 
-/// Handler for PUT requests to notify the successor node of a change in the predecessor node.
+/// Notifies the current node about its new successor.
+///
+/// This handler listens for PUT requests at the path `/notify_succ/{node_ip}`. It updates the current node's
+/// predecessor information based on the provided IP address and recalculates the set of keys the current node
+/// is responsible for (`resp_keys`).
 ///
 /// # Arguments
 ///
-/// * `node_ip` - The IP address of the successor node to be notified.
-/// * `prev_node` - The previous node in the Chord ring.
-/// * `node_data` - The current node in the Chord ring.
-/// * `crash_flag` - A flag indicating whether the node is simulating a crash.
+/// * `node_ip` - The IP address of the node that is notifying the current node about being its successor.
+///   This IP is extracted from the path parameter `{node_ip}`.
+/// * `prev_node` - Shared data about the current node's predecessor, including its IP address and ID.
+/// * `node_data` - Shared data about the current node, including its IP address, ID, and the set of keys
+///   it's responsible for (`resp_keys`).
+/// * `crash_flag` - A shared atomic boolean flag to check if the node is simulating a crash.
 ///
 /// # Returns
 ///
-/// Returns an HTTP response indicating success or failure.
+/// If the `crash_flag` is set (indicating a simulated crash), the function returns a "Service Unavailable"
+/// HTTP response.
+///
+/// After updating the predecessor data and recalculating the `resp_keys`, the handler returns an "OK" HTTP response.
 #[put("/notify_succ/{node_ip}")]
 async fn put_notify_succ(
     node_ip: web::Path<String>,
@@ -858,19 +867,31 @@ async fn put_notify_succ(
     HttpResponse::Ok().body("ok")
 }
 
-/// Handler for PUT requests to notify the predecessor of a node's update.
+/// Notifies the current node about a potential better predecessor.
+///
+/// This handler listens for PUT requests at the path `/notify_pred/{node_ip}`. Upon receiving a notification,
+/// the current node evaluates whether the notifying node is a better predecessor based on the Chord protocol's
+/// criteria. The handler also updates the node's finger table entries.
 ///
 /// # Arguments
 ///
-/// * `node_ip` - A `web::Path` containing the IP address of the node to notify.
-/// * `finger_table` - A `web::Data` containing a shared reference to the finger table.
-/// * `prev_node` - A `web::Data` containing a shared reference to the previous node.
-/// * `node_data` - A `web::Data` containing a shared reference to the current node.
-/// * `crash_flag` - A `web::Data` containing a shared reference to a boolean flag indicating whether the node is simulating a crash.
+/// * `node_ip` - The IP address of the node that is notifying the current node about being a potential better
+///   predecessor. This IP is extracted from the path parameter `{node_ip}`.
+/// * `finger_table` - A shared reference to the finger table, which is a data structure used in the Chord protocol
+///   to maintain references to other nodes in the system.
+/// * `prev_node` - Shared data about the current node's predecessor, including its IP address and ID.
+/// * `node_data` - Shared data about the current node, including its IP address and ID.
+/// * `crash_flag` - A shared atomic boolean flag to check if the node is simulating a crash.
 ///
 /// # Returns
 ///
-/// An `impl Responder` indicating the success of the request.
+/// If the `crash_flag` is set (indicating a simulated crash), the function returns a "Service Unavailable"
+/// HTTP response.
+///
+/// After evaluating the notifying node as a potential predecessor and updating the finger table, the handler
+/// returns an "OK" HTTP response. If the notifying node isn't the direct predecessor but might be a better
+/// predecessor for some other node in the network, this function can recursively notify other nodes about
+/// the potential better predecessor.
 #[put("/notify_pred/{node_ip}")]
 async fn put_notify(
     node_ip: web::Path<String>,
@@ -900,7 +921,7 @@ async fn put_notify(
 
     // println!("finger_table_ref 2 {:?}", finger_table_ref);
 
-    let mut prev_node_ref = prev_node.write().await;
+    let prev_node_ref = prev_node.write().await;
 
     // println!("node_ref {:?}", node_ref.clone());
     // println!("prev_node_ref {:?}", prev_node_ref.clone());
@@ -911,14 +932,28 @@ async fn put_notify(
     } else {
         let url = format!("http://{}/notify_pred/{}", prev_node_ref.ip, node_ip);
         println!("url {:?}", url);
-        let res = send_put_request(url, node_ip.to_string()).await;
+        let _res = send_put_request(url, node_ip.to_string()).await;
         HttpResponse::Ok().body("ok")
     }
 }
 
-/// Handler for GET requests to "/reps_keys".
-/// Returns a JSON response containing the replica keys of the node.
-/// If the node is simulating a crash, returns a 503 Service Unavailable response.
+/// Retrieves the set of keys the current node is responsible for.
+///
+/// This handler listens for GET requests at the path `/reps_keys`. The function returns the set of keys (`resp_keys`)
+/// that the current node is responsible for, as per the Chord protocol's criteria.
+///
+/// # Arguments
+///
+/// * `node_data` - Shared data about the current node, including its IP address, ID, and the set of keys
+///   it's responsible for (`resp_keys`).
+/// * `crash_flag` - A shared atomic boolean flag to check if the node is simulating a crash.
+///
+/// # Returns
+///
+/// If the `crash_flag` is set (indicating a simulated crash), the function returns a "Service Unavailable"
+/// HTTP response.
+///
+/// Otherwise, it returns a JSON response containing the set of keys the current node is responsible for.
 #[get("/reps_keys")]
 async fn get_reps_keys(
     node_data: web::Data<Arc<RwLock<Node>>>,
@@ -931,6 +966,7 @@ async fn get_reps_keys(
     let node = &*node_ref;
     HttpResponse::Ok().json(node.resp_keys.clone())
 }
+
 /// Handler for POST requests to simulate a node crash.
 ///
 /// # Arguments
@@ -945,6 +981,7 @@ async fn post_sim_crash(crash_flag: web::Data<Arc<AtomicBool>>) -> impl Responde
     crash_flag.store(true, Ordering::SeqCst);
     HttpResponse::Ok().body("Crash simulation started")
 }
+
 /// Handler for the POST request to simulate node recovery after a crash.
 ///
 /// # Arguments
