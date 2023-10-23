@@ -4,7 +4,7 @@ from time import sleep as wait
 import time
 
 # key = input("what key:")
-nprime = "172.21.21.175:55557"
+nprime = "172.21.21.175:55558"
 
 i = 0;
 with open ("ip.txt", "r") as myfile:
@@ -16,7 +16,7 @@ with open ("ip.txt", "r") as myfile:
         i = i+1
         print(ip_addr.split(" ")[2])
         print(i)
-        response = requests.post("http://"+ip_addr.split(" ")[2]+":55557/join?nprime=" + nprime)
+        response = requests.post("http://"+ip_addr.split(" ")[2]+":55558/join?nprime=" + nprime)
         print(response.status_code)
         print(response.text)
         wait(0.1)

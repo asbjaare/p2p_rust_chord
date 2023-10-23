@@ -6,17 +6,6 @@ import time
 # key = input("what key:")
 nprime = "172.21.21.175:55557"
 
-def put_random_keys(url, num_keys, key_length):
-    start_time = time.time()
-    for i in range(num_keys):
-        key = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz', k=key_length))
-        response = requests.put(f"{url}/{key}", data="value")
-        if response.status_code != 200:
-            print(f"Error putting key {key}: {response.status_code}")
-    end_time = time.time()
-    throughput = num_keys / (end_time - start_time)
-    print(f"Put {num_keys} keys in {end_time - start_time:.2f} seconds, throughput: {throughput:.2f} keys/sec")
-
 def get_random_keys(url, num_keys, key_length):
     start_time = time.time()
     for i in range(num_keys):
@@ -66,10 +55,6 @@ def get_random_keys(url, num_keys, key_length):
 #         wait(1)
 
 
-# response = requests.get("http://172.21.21.188:55557/neighbors")
-response = requests.post("http://172.21.21.188:55557/sim-crash")
+response = requests.get("http://172.21.21.188:55557/neighbors")
 print(response.status_code)
 print(response.text)
-# response = requests.get("http://172.21.21.175:55557/reps_keys")
-# print(response.status_code)
-# print(response.text)
