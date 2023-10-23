@@ -29,21 +29,6 @@ def get_random_keys(url, num_keys, key_length):
     print(f"Got {num_keys} keys in {end_time - start_time:.2f} seconds, throughput: {throughput:.2f} keys/sec")
 
     
-# i = 0;
-# with open ("ip.txt", "r") as myfile:
-#     next(myfile)
-#     data=myfile.readlines()[:19]
-
-#     for line in data:
-#         ip_addr = line.rstrip()
-#         i = i+1
-#         print(ip_addr.split(" ")[2])
-#         print(i)
-#         response = requests.post("http://"+ip_addr.split(" ")[2]+":55557/join?nprime=" + nprime)
-#         print(response.status_code)
-#         print(response.text)
-#         wait(0.1)
-
 # with open ("ip.txt", "r") as myfile:
 
 #     data=myfile.readlines()[:25]
