@@ -81,7 +81,8 @@ def get_random_keys(url, num_keys, key_length):
 #         wait(1)
 
 
-response = requests.get("http://172.21.21.188:55557/neighbors")
+# response = requests.get("http://172.21.21.188:55557/neighbors")
+response = requests.post("http://172.21.21.188:55557/sim-crash")
 print(response.status_code)
 print(response.text)
 # response = requests.get("http://172.21.21.175:55557/reps_keys")

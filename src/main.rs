@@ -253,7 +253,7 @@ async fn main() -> std::io::Result<()> {
         println!("Provde port number as argument");
         std::process::exit(1);
     }
-    let crash_flag = Arc::new(AtomicBool::new(false));
+    let crash_flag = AtomicBool::new(false);
 
     let _num_nodes: u32 = args[1].parse().unwrap();
 
@@ -288,7 +288,7 @@ async fn main() -> std::io::Result<()> {
     let previous_node_data = web::Data::new(Arc::new(RwLock::new(prev_node)));
     let finger_table_data = web::Data::new(Arc::new(RwLock::new(finger_table)));
     let num_node_data = web::Data::new(Arc::new(RwLock::new(current_num_nodes_in_cluster)));
-    let crash_flag_data = web::Data::new(Arc::new(RwLock::new(crash_flag)));
+    let crash_flag = web::Data::new(Arc::new(RwLock::new(crash_flag)));
 
     println!(
         "Server starting at http:// {} with node_id {:?}",
@@ -303,7 +303,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(finger_table_data.clone())
             .app_data(previous_node_data.clone())
             .app_data(num_node_data.clone())
-            .app_data(crash_flag_data.clone())
+            .app_data(crash_flag.clone())
             .service(index)
             .service(item_get)
             .service(item_put)
@@ -316,6 +316,8 @@ async fn main() -> std::io::Result<()> {
             .service(put_notify_succ_leave)
             .service(put_notify_pred_leave)
             .service(post_leave)
+            .service(post_sim_crash)
+            .service(post_sim_recover)
     })
     .workers(8)
     .bind(server_addr)?
