@@ -32,7 +32,7 @@ def get_random_keys(url, num_keys, key_length):
 # i = 0;
 # with open ("ip.txt", "r") as myfile:
 #     next(myfile)
-#     data=myfile.readlines()[:19]
+#     data=myfile.readlines()[:49]
 
 #     for line in data:
 #         ip_addr = line.rstrip()
@@ -44,17 +44,17 @@ def get_random_keys(url, num_keys, key_length):
 #         print(response.text)
 #         wait(0.1)
 
-# with open ("ip.txt", "r") as myfile:
+with open ("ip.txt", "r") as myfile:
 
-#     data=myfile.readlines()[:25]
-#     for line in data:
-#         ip_addr = line.rstrip()
+    data=myfile.readlines()[25:]
+    for line in data:
+        ip_addr = line.rstrip()
      
 
-#         response = requests.post("http://"+ip_addr.split(" ")[2]+":55555/leave" + nprime)
-#         print(response.status_code)
-#         print(response.text)
-#         wait(1)
+        response = requests.post("http://"+ip_addr.split(" ")[2]+":55557/leave")
+        print(response.status_code)
+        print(response.text)
+        wait(0.1)
 
 
 # response = requests.post("http://172.21.21.184:55557/join?nprime=" + nprime)
@@ -81,9 +81,9 @@ def get_random_keys(url, num_keys, key_length):
 #         wait(1)
 
 
-response = requests.get("http://172.21.21.188:55557/neighbors")
-print(response.status_code)
-print(response.text)
+# response = requests.get("http://172.21.21.188:55557/neighbors")
+# print(response.status_code)
+# print(response.text)
 # response = requests.get("http://172.21.21.175:55557/reps_keys")
 # print(response.status_code)
 # print(response.text)
