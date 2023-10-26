@@ -1,6 +1,9 @@
 use actix_web::{get, post, put, web, App, HttpResponse, HttpServer, Responder};
+use actix_rt::spawn;
+use actix_rt::time::interval;
 use serde_derive::{Deserialize, Serialize};
-use std::env;
+use std::time::Duration;
+use std::{env, thread};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -9,7 +12,7 @@ use tokio::sync::RwLock;
 use hyper::{Body, Client, Request, Uri};
 mod node;
 
-const KEY_SIZE: u32 = 20;
+const KEY_SIZE: u32 = 5;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
 use node::{Node, NodePrev};
 
@@ -87,7 +90,7 @@ async fn send_put_request(
 
     let _res = client.request(req).await?;
 
-    println!("res {:?}", _res);
+    // println!("res {:?}", _res);
 
     Ok(())
 }
@@ -122,7 +125,7 @@ async fn send_put_request_json_succ_leave(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client = Client::new();
 
-    println!("url {:?} and data {:?}", url, data);
+    // println!("url {:?} and data {:?}", url, data);
 
     let uri = url.parse::<Uri>()?;
 
@@ -136,7 +139,7 @@ async fn send_put_request_json_succ_leave(
 
     let _res = client.request(req).await?;
 
-    println!("res {:?}", _res);
+    // println!("res {:?}", _res);
 
     Ok(())
 }
@@ -158,7 +161,7 @@ async fn send_put_request_json_pred_leave(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client = Client::new();
 
-    println!("url {:?} and data {:?}", url, data);
+    // println!("url {:?} and data {:?}", url, data);
 
     let uri = url.parse::<Uri>()?;
 
@@ -172,7 +175,7 @@ async fn send_put_request_json_pred_leave(
 
     let _res = client.request(req).await?;
 
-    println!("res {:?}", _res);
+    // println!("res {:?}", _res);
 
     Ok(())
 }
@@ -209,11 +212,20 @@ async fn send_get_request(url: String) -> Result<String, Box<dyn std::error::Err
 
     let res = client.request(req).await?;
 
-    let body = hyper::body::to_bytes(res.into_body()).await?;
+    
+    if res.status() != 200 {
 
-    let body = String::from_utf8(body.to_vec())?;
+        Err("Node crashed".into())
+        
+    }
+    else {
+        
+        let body = hyper::body::to_bytes(res.into_body()).await?;
+    
+        let body = String::from_utf8(body.to_vec())?;
+        Ok(body)
+    }
 
-    Ok(body)
 }
 
 /// Returns the local IP address of the machine, or None if it cannot be determined.
@@ -265,6 +277,8 @@ async fn main() -> std::io::Result<()> {
     // format the ip address and port of the node
     let ip_and_port = format!("{}:{}", local_ip.to_string(), port_num);
 
+    let ip_and_port_clone = ip_and_port.clone();
+
     // get the node id of the node
     let node_id = Node::hash_function(ip_and_port.clone());
 
@@ -289,7 +303,8 @@ async fn main() -> std::io::Result<()> {
     let finger_table_data = web::Data::new(Arc::new(RwLock::new(finger_table)));
     let num_node_data = web::Data::new(Arc::new(RwLock::new(current_num_nodes_in_cluster)));
     let crash_flag = web::Data::new(Arc::new(RwLock::new(crash_flag)));
-
+    let previous_node_data_clone = previous_node_data.clone();
+    let finger_table_data_clone = finger_table_data.clone();
     println!(
         "Server starting at http:// {} with node_id {:?}",
         local_ip.to_string(),
@@ -297,11 +312,42 @@ async fn main() -> std::io::Result<()> {
     );
     let server_addr = format!("{}:{}", "0.0.0.0", port_num);
 
+    spawn(async move {
+        let mut interval = interval(Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            
+            let prev_node_ip = previous_node_data.read().await.ip.clone();
+            let succ_node_ip = finger_table_data.read().await[0].1.ip.clone();
+
+        
+
+            if prev_node_ip != "" {
+                let prev_node_url = format!("http://{}/check_alive", prev_node_ip);
+                if let Err(e) = send_get_request(prev_node_url).await {
+                    eprintln!("Error sending HTTP request to predecessor: {}", e);
+                } else {
+                    println!("Predecessor is alive");
+                }
+            }
+
+            if succ_node_ip != ip_and_port_clone {
+                let succ_node_url = format!("http://{}/check_alive", succ_node_ip);
+                if let Err(e) = send_get_request(succ_node_url).await {
+                    eprintln!("Error sending HTTP request to successor: {}", e);
+                } else {
+                    println!("Successor is alive");
+                }
+            }
+
+            }
+    });
+
     HttpServer::new(move || {
         App::new()
             .app_data(node_data.clone())
-            .app_data(finger_table_data.clone())
-            .app_data(previous_node_data.clone())
+            .app_data(finger_table_data_clone.clone())
+            .app_data(previous_node_data_clone.clone())
             .app_data(num_node_data.clone())
             .app_data(crash_flag.clone())
             .service(index)
@@ -318,13 +364,30 @@ async fn main() -> std::io::Result<()> {
             .service(post_leave)
             .service(post_sim_crash)
             .service(post_sim_recover)
+            .service(get_check_pred)
     })
     .workers(8)
     .bind(server_addr)?
     .run()
     .await?;
 
+
+ 
+
+
     Ok(())
+}
+
+
+#[get("/check_alive")]
+async fn get_check_pred(crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,) -> impl Responder {
+    if crash_flag.read().await.load(Ordering::Relaxed) {
+        return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
+    }
+    else {
+        
+        HttpResponse::Ok().body("check pred")
+    }
 }
 
 /// Handles GET requests to retrieve the IP addresses of the current node's neighbors in the Chord ring.
@@ -626,8 +689,8 @@ async fn post_join_ring(
     }
 
     println!("node_ref {:?}", node_ref.clone());
-    println!("succesor {:?}", suc_node);
-    // println!("finger_table_ref {:?}", finger_table_ref);
+    // println!("succesor {:?}", suc_node);
+    println!("finger_table_ref {:?}", finger_table_ref);
 
     let url = format!("http://{}/neighbors", successor);
     let res = send_get_request(url).await;
@@ -1006,11 +1069,11 @@ async fn put_notify(
         finger.1.id = best_succ.id;
     }
 
-    // println!("finger_table_ref 2 {:?}", finger_table_ref);
+    println!("node_ref {:?}", node_ref.clone());
+    println!("finger_table_ref 2 {:?}", finger_table_ref);
 
     let prev_node_ref = prev_node.write().await;
 
-    // println!("node_ref {:?}", node_ref.clone());
     // println!("prev_node_ref {:?}", prev_node_ref.clone());
     // println!("succesor_id {:?}", succesor_id);
 
@@ -1018,7 +1081,7 @@ async fn put_notify(
         HttpResponse::Ok().body("ok")
     } else {
         let url = format!("http://{}/notify_pred/{}", prev_node_ref.ip, node_ip);
-        println!("url {:?}", url);
+        // println!("url {:?}", url);
         let _res = send_put_request(url, node_ip.to_string()).await;
         HttpResponse::Ok().body("ok")
     }

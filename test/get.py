@@ -18,17 +18,17 @@ def get_random_keys(url, num_keys, key_length):
     print(f"Got {num_keys} keys in {end_time - start_time:.2f} seconds, throughput: {throughput:.2f} keys/sec")
 
     
-# with open ("ip.txt", "r") as myfile:
+with open ("ip.txt", "r") as myfile:
 
-#     data=myfile.readlines()[:25]
-#     for line in data:
-#         ip_addr = line.rstrip()
+    data=myfile.readlines()[:2]
+    for line in data:
+        ip_addr = line.rstrip()
      
 
-#         response = requests.post("http://"+ip_addr.split(" ")[2]+":55550/leave")
-#         print(response.status_code)
-#         print(response.text)
-#         wait(0.1)
+        response = requests.post("http://"+ip_addr.split(" ")[2]+":55550/leave")
+        print(response.status_code)
+        print(response.text)
+        wait(0.5)
 
 
 
@@ -57,6 +57,6 @@ def get_random_keys(url, num_keys, key_length):
 #         wait(1)
 
 
-response = requests.get("http://172.21.21.123:55550/storage/87911074-12f7-4bf9-9915-ab0757e16d57")
-print(response.status_code)
-print(response.text)
+# response = requests.get("http://172.21.21.123:55550/storage/87911074-12f7-4bf9-9915-ab0757e16d57")
+# print(response.status_code)
+# print(response.text)

@@ -6,7 +6,7 @@ use std::fmt;
 use std::fs;
 use std::hash::{Hash, Hasher};
 
-const KEY_SIZE: u32 = 20;
+const KEY_SIZE: u32 = 5;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
 
 /// Structure to represent a node in the cluster, with its id, ip and hashmap

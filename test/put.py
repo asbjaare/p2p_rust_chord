@@ -27,7 +27,7 @@ def put_random_keys(url, num_keys, key_length):
 # print(response.status_code)
 # print(response.text)
 
-response = requests.put("http://172.21.21.123:55550/storage/87911074-12f7-4bf9-9915-ab0757e16d57")
+response = requests.put("http://172.21.21.176:55550/storage/5")
 print(response.status_code)
 print(response.text)
 
