@@ -5,8 +5,10 @@ use std::collections::HashSet;
 use std::fmt;
 use std::fs;
 use std::hash::{Hash, Hasher};
+use serde_json::json;
+use warp::reply::Json;
 
-const KEY_SIZE: u32 = 5;
+const KEY_SIZE: u32 = 6;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
 
 /// Structure to represent a node in the cluster, with its id, ip and hashmap
@@ -23,6 +25,12 @@ pub struct NodePrev {
     pub id: u32,
     pub ip: String,
 }
+#[derive(Debug, Serialize, Clone)]
+pub struct Succ_list_node {
+    id: u32,
+    ip: String,
+}
+
 
 impl NodePrev {
     pub fn new(id: u32, ip: String) -> Self {
@@ -330,61 +338,7 @@ impl Node {
         }
     }
 
-    // pub async fn find_succesor_key(
-    //     key: u32,
-    //     finger_table: Vec<(u32, Node)>,
-    //     current_id: u32,
-    // ) -> String {
-    //     let mut succesor = String::new();
 
-    //     let succesor_id = finger_table[0].1.id;
-
-    //     if succesor_id < current_id {
-    //         for i in current_id..=CLUSTER_SIZE {
-    //             if i == key {
-    //                 succesor = finger_table[0].1.ip.clone();
-    //                 break;
-    //             }
-    //         }
-
-    //         if succesor.is_empty() {
-    //             for i in 0..=succesor_id {
-    //                 if i == key {
-    //                     succesor = finger_table[0].1.ip.clone();
-    //                     break;
-    //                 }
-    //             }
-    //         }
-    //     } else {
-    //         for i in current_id..succesor_id {
-    //             if i == key {
-    //                 succesor = finger_table[0].1.ip.clone();
-    //                 break;
-    //             }
-    //         }
-    //     }
-
-    //     //sort the finger table by id
-    //     let mut sorted_finger_table = finger_table.clone();
-    //     sorted_finger_table.sort_by_key(|finger| finger.1.id);
-
-    //     if succesor.is_empty() {
-    //         for finger in sorted_finger_table.iter() {
-    //             if finger.1.id <= key {
-    //                 // println!("Finger: {:?}", finger);
-    //                 succesor = finger.1.ip.clone();
-    //             }
-    //         }
-    //     }
-
-    //     if succesor.is_empty() {
-    //         succesor = sorted_finger_table[sorted_finger_table.len() - 1]
-    //             .1
-    //             .ip
-    //             .clone();
-    //     }
-    //     succesor
-    // }
 }
 
 /// Implements the `Hash` trait for the `Node` struct.

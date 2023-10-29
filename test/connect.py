@@ -9,7 +9,7 @@ nprime = "172.21.21.175:55550"
 i = 0;
 with open ("ip.txt", "r") as myfile:
     next(myfile)
-    data=myfile.readlines()[:3]
+    data=myfile.readlines()[:7]
 
     for line in data:
         ip_addr = line.rstrip()
@@ -21,4 +21,6 @@ with open ("ip.txt", "r") as myfile:
         print(response.text)
         wait(0.1)
 
-# response = requests.post("http://172.21.21.176:55550/join?nprime=" + nprime)
+# response = requests.post("http://172.21.21.181:55552/join?nprime=" + nprime)
+# print(response.status_code)
+# print(response.text)

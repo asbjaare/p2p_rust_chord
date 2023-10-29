@@ -4,7 +4,7 @@ import random
 import time
 
 # key = input("what key:")
-nprime = "172.21.21.175:55557"
+nprime = "172.21.21.175:55552"
 
 def get_random_keys(url, num_keys, key_length):
     start_time = time.time()
@@ -18,29 +18,29 @@ def get_random_keys(url, num_keys, key_length):
     print(f"Got {num_keys} keys in {end_time - start_time:.2f} seconds, throughput: {throughput:.2f} keys/sec")
 
     
-with open ("ip.txt", "r") as myfile:
+# with open ("ip.txt", "r") as myfile:
 
-    data=myfile.readlines()[:2]
-    for line in data:
-        ip_addr = line.rstrip()
+#     data=myfile.readlines()[:4]
+#     for line in data:
+#         ip_addr = line.rstrip()
      
 
-        response = requests.post("http://"+ip_addr.split(" ")[2]+":55550/leave")
-        print(response.status_code)
-        print(response.text)
-        wait(0.5)
+#         response = requests.post("http://"+ip_addr.split(" ")[2]+":55550/leave")
+#         print(response.status_code)
+#         print(response.text)
+#         wait(0.5)
 
 
 
 
-# response = requests.post("http://172.21.21.184:55557/join?nprime=" + nprime)
+response = requests.get("http://172.21.21.181:55550/succ_list")
 # response = requests.post("http://172.21.21.175:55555/leave")
 # response = requests.get("http://172.21.21.176:55555/storage/1", data="hello world")
 # put_random_keys("http://172.21.21.176:55555/storage", 1000, 10)
 # get_random_keys("http://172.21.21.176:55555/storage", 1000, 10)
 # response = requests.get("http://172.21.21.175:55555/node-info")
-# print(response.status_code)
-# print(response.text)
+print(response.status_code)
+print(response.text)
 
 # neighbours = []
 # with open ("ip.txt", "r") as myfile:
