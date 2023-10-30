@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 use hyper::{Body, Client, Request, Uri};
 mod node;
 
-const KEY_SIZE: u32 = 6;
+const KEY_SIZE: u32 = 20;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
 use node::{Node, NodePrev};
 
@@ -49,7 +49,7 @@ struct LeaveQuery {
 #[derive(Debug, Serialize, Deserialize)]
 struct SuccQuery {
     new_succesor: String,
-    leaving_node: String,
+    leaving_node: Vec<String>,
     succ_list_node: Vec<Succ_list_node>,
 }
 
@@ -122,6 +122,7 @@ async fn send_put_request_with_list(
         .body(Body::from(json_data))?;
 
     let _res = client.request(req).await?;
+    println!("res {:?}", _res);
 
     let body = hyper::body::to_bytes(_res.into_body()).await?;
     let body = String::from_utf8(body.to_vec())?;
@@ -349,7 +350,10 @@ async fn main() -> std::io::Result<()> {
     let crash_flag = web::Data::new(Arc::new(RwLock::new(crash_flag)));
     let succesor_list_data = web::Data::new(Arc::new(RwLock::new(succesor_list)));
     let previous_node_data_clone = previous_node_data.clone();
+    let crash_flag_clone = crash_flag.clone();
+
     let finger_table_data_clone = finger_table_data.clone();
+    let succesor_list_data_clone = succesor_list_data.clone();
     println!(
         "Server starting at http:// {} with node_id {:?}",
         local_ip.to_string(),
@@ -361,25 +365,74 @@ async fn main() -> std::io::Result<()> {
         let mut interval = interval(Duration::from_secs(5));
         loop {
             interval.tick().await;
+
+            let crash_flag_ref = crash_flag_clone.read().await;
+
+            if crash_flag_ref.load(Ordering::Relaxed) {
+                // println!("Node is simulating a crash");
+                continue;
+                
+            }
             
             // let prev_node_ip = previous_node_data.read().await.ip.clone();
-            let succ_node_ip = finger_table_data.read().await[0].1.ip.clone();
-
-        
-
-            // if prev_node_ip != "" {
-            //     let prev_node_url = format!("http://{}/check_alive", prev_node_ip);
-            //     if let Err(e) = send_get_request(prev_node_url).await {
-            //         eprintln!("Error sending HTTP request to predecessor: {}", e);
-            //     } else {
-            //         println!("Predecessor is alive");
-            //     }
-            // }
+            let mut finger_table_ref = finger_table_data.write().await;
+            let mut succ_list_ref = succesor_list_data_clone.write().await;
+            let succ_node_ip = finger_table_ref[0].1.ip.clone();
+            
 
             if succ_node_ip != ip_and_port_clone {
                 let succ_node_url = format!("http://{}/check_alive", succ_node_ip);
                 if let Err(e) = send_get_request(succ_node_url).await {
-                    eprintln!("Error sending HTTP request to successor: {}", e);
+                    let mut leaving_list:Vec<String> = Vec::new();
+                    for succesor in succ_list_ref.clone() {
+                        let succ_node_url = format!("http://{}/check_alive", succesor.ip);
+                        if let Err(e) = send_get_request(succ_node_url).await {
+                            leaving_list.push(succesor.ip.clone());
+                            
+                        } else {
+                            println!("crashed succesors are {:?}", leaving_list);
+                            println!("Debug: Successor is alive and is {:?}", succesor.ip);
+                            // let mut succ_list_ref = succesor_list_data_clone.write().await;
+                            let prev_node_ref = previous_node_data.read().await;
+                            // let mut finger_table_ref = finger_table_data.write().await;
+                            let url = format!("http://{}/notify_succ/{}", succesor.ip, ip_and_port_clone);
+                            let res = send_put_request_with_list(url, succ_list_ref.to_vec()).await;
+                            let new_succ_node = res.unwrap();
+                            println!("Deadlockcheck");
+                            succ_list_ref.clear();
+                            succ_list_ref.clone_from(&new_succ_node);
+                        
+                            if succ_list_ref.len() == KEY_SIZE as usize {
+                                succ_list_ref.pop();
+                                succ_list_ref.insert(0, Succ_list_node{id: succesor.id, ip: succesor.ip.clone()});
+                            }
+                            else {
+                                succ_list_ref.insert(0, Succ_list_node{id: succesor.id, ip: succesor.ip.clone()});
+                            }
+
+                            let info_succ = SuccQuery {
+                                new_succesor: succesor.ip.clone(),
+                                leaving_node: leaving_list.clone(),
+                                succ_list_node: succ_list_ref.to_vec(),
+                            };
+
+                            for (i, finger) in finger_table_ref.iter_mut().enumerate() {
+
+                                for leave in leaving_list.clone() {
+                                    if finger.1.ip == leave {
+                                        finger.1.id = succesor.id;
+                                        finger.1.ip = succesor.ip.clone();
+                                    }
+                                }
+                                
+                                
+                            }
+                        
+                            let url = format!("http://{}/notify_pred_leave", prev_node_ref.ip);
+                            let _res = send_put_request_json_pred_leave(url, info_succ).await;
+                            break;
+                        }
+                    }
                 } else {
                     // println!("Successor is alive");
                 }
@@ -817,6 +870,9 @@ async fn post_leave(
 
     let url = format!("http://{}/notify_succ_leave", finger_table_ref[0].1.ip);
 
+    let mut leaving_node_list = Vec::new();
+    leaving_node_list.push(node_ref.ip.clone());
+
     let info: LeaveQuery = LeaveQuery {
         predecessor: prev_node_ref.ip.clone(),
         leaving_node: node_ref.ip.clone(),
@@ -826,7 +882,7 @@ async fn post_leave(
 
     let info_succ = SuccQuery {
         new_succesor: finger_table_ref[0].1.ip.clone(),
-        leaving_node: node_ref.ip.clone(),
+        leaving_node: leaving_node_list,
         succ_list_node: _res.unwrap(),
     };
 
@@ -890,17 +946,7 @@ async fn put_notify_succ_leave(
         }
     }
 
-    // println!("leaving before ip {:?}", node_ref.ip);
 
-    // let url = format!("http://{}/notify_pred/{}", prev_node_ref.ip, node_ref.ip);
-    // let _res = send_put_request_with_list(url,succ_list_ref.to_vec() ).await;
-
-    // println!("leaving after ip {:?}", node_ref.ip);
-
-    // println!("info {:?}", info);
-
-    // println!("succ {:?}", finger_table_ref[0].1.ip);
-    // println!("prev {:?}", prev_node_ref.ip);
 
     HttpResponse::Ok().json(succ_list_ref.to_vec())
 }
@@ -935,7 +981,14 @@ async fn put_notify_pred_leave(
     let prev_node_ref = previous_node_data.write().await;
 
     let _node_ref_id = node_ref.id;
-    let leaving_node_id = Node::hash_function(info.leaving_node.clone());
+
+    let mut leaving_node_ids = Vec::new();
+    
+
+    for nodes in info.leaving_node.clone() {
+       leaving_node_ids.push(Node::hash_function(nodes.clone()));
+    }
+
     let new_succ = Node::new(
         Node::hash_function(info.new_succesor.clone()),
         info.new_succesor.clone(),
@@ -959,11 +1012,14 @@ async fn put_notify_pred_leave(
     
     for (i, finger) in finger_table_ref.iter_mut().enumerate() {
 
-
-        if finger.1.id == leaving_node_id {
-            finger.1.id = new_succ.id;
-            finger.1.ip = new_succ.ip.clone();
+        for leave in leaving_node_ids.clone() {
+            if finger.1.id == leave {
+                finger.1.id = new_succ.id;
+                finger.1.ip = new_succ.ip.clone();
+            }
         }
+        
+        
     }
 
 
@@ -1091,6 +1147,8 @@ async fn put_notify_succ(
 
     // println!("node_keys in notify {:?}", node_ref.resp_keys);
 
+    // println!("prev_node_ref {:?}", prev_node_ref.clone());
+
     let mut succ_list_ref = succ_list.read().await;
 
     // println!("succ_list_ref {:?}", json!(succ_list_ref.clone()));
@@ -1171,8 +1229,8 @@ async fn put_notify(
         succ_list_ref.insert(0, Succ_list_node{id: finger_table_ref[0].1.id, ip: finger_table_ref[0].1.ip.clone()});
     }
     
-    println!("node_ref {:?}", node_ref.clone());
-    println!("finger_table_ref {:?}", finger_table_ref);
+    // println!("node_ref {:?}", node_ref.clone());
+    // println!("finger_table_ref {:?}", finger_table_ref);
     // println!("succ_list_ref {:?}", succ_list_ref);
 
     if prev_node_ref.id == succesor_id {
