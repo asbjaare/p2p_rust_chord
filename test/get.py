@@ -20,27 +20,27 @@ def get_random_keys(url, num_keys, key_length):
     
 # with open ("ip.txt", "r") as myfile:
 
-#     data=myfile.readlines()[:4]
+#     data=myfile.readlines()[:25]
 #     for line in data:
 #         ip_addr = line.rstrip()
      
 
-#         response = requests.post("http://"+ip_addr.split(" ")[2]+":55550/leave")
+#         response = requests.post("http://"+ip_addr.split(" ")[2]+":60021/leave")
 #         print(response.status_code)
 #         print(response.text)
-#         wait(0.5)
+#         # wait(0.5)
 
 
 
 
-response = requests.get("http://172.21.21.181:55550/succ_list")
-# response = requests.post("http://172.21.21.175:55555/leave")
-# response = requests.get("http://172.21.21.176:55555/storage/1", data="hello world")
-# put_random_keys("http://172.21.21.176:55555/storage", 1000, 10)
-# get_random_keys("http://172.21.21.176:55555/storage", 1000, 10)
-# response = requests.get("http://172.21.21.175:55555/node-info")
-print(response.status_code)
-print(response.text)
+# response = requests.get("http://172.21.21.181:55550/succ_list")
+# # response = requests.post("http://172.21.21.175:55555/leave")
+# # response = requests.get("http://172.21.21.176:55555/storage/1", data="hello world")
+# # put_random_keys("http://172.21.21.176:55555/storage", 1000, 10)
+# # get_random_keys("http://172.21.21.176:55555/storage", 1000, 10)
+# # response = requests.get("http://172.21.21.175:55555/node-info")
+# print(response.status_code)
+# print(response.text)
 
 # neighbours = []
 # with open ("ip.txt", "r") as myfile:
@@ -57,6 +57,6 @@ print(response.text)
 #         wait(1)
 
 
-# response = requests.get("http://172.21.21.123:55550/storage/87911074-12f7-4bf9-9915-ab0757e16d57")
-# print(response.status_code)
-# print(response.text)
+response = requests.get("http://172.21.21.126:60021/storage/7d20658c-87b9-48a0-9624-2fd7d42ece26")
+print(response.status_code)
+print(response.text)
