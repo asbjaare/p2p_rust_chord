@@ -2,9 +2,10 @@
 import requests
 from time import sleep as wait
 import time
+import concurrent.futures
 
 # key = input("what key:")
-nprime = "172.21.21.175:60021"
+nprime = "172.21.21.175:60035"
 
 start_time = time.time()
 
@@ -19,11 +20,13 @@ with open ("ip.txt", "r") as myfile:
         print(ip_addr.split(" ")[2])
         print(i)
         # print("http://"+ip_addr.split(" ")[2]+":60021/join?nprime=" + nprime)
-        response = requests.post("http://"+ip_addr.split(" ")[2]+":60021/join?nprime=" + nprime)
-        nprime = ip_addr.split(" ")[2] + ":60021"
+        response = requests.post("http://"+ip_addr.split(" ")[2]+":60035/join?nprime=" + nprime)
+        nprime = ip_addr.split(" ")[2] + ":60035"
         print(response.status_code)
         print(response.text)
         # wait(0.1)
+
+
 
 end_time = time.time()
 
