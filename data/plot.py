@@ -3,36 +3,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # Load the CSV data into a DataFrame
-data = pd.read_csv("results.csv")
+data = pd.read_csv("join_avg.csv")
 
-# Group the data by 'nodes' and 'signal' and calculate the mean and standard deviation
-grouped = data.groupby(["nodes", "signal"])["rps"].agg(["mean", "std"]).reset_index()
 
-# Separate 'put' and 'get' data
-put_data = grouped[grouped["signal"] == "put"]
-get_data = grouped[grouped["signal"] == "get"]
-print(put_data["std"].to_list())
 # Create a plot
 plt.figure(figsize=(10, 6))
 
-# Plot 'put' data with error bars for standard deviation
-plt.errorbar(
-    put_data["nodes"],
-    put_data["mean"],
-    yerr=put_data["std"],
-    label="Put",
-    marker="o",
-    elinewidth=15,
-    capsize=10,
-    capthick=5,
-    linewidth=5,
-)
 
 # Plot 'get' data with error bars for standard deviation
 plt.errorbar(
-    get_data["nodes"],
-    get_data["mean"],
-    yerr=get_data["std"],
+    data["nodes"],
+    data["mean"],
+    yerr=data["std"],
     label="Get",
     marker="o",
     elinewidth=15,
@@ -46,7 +28,9 @@ plt.xlabel("Nodes")
 plt.ylabel("Average RPS")
 plt.title("Average RPS vs. Nodes (with Standard Deviation)")
 plt.legend()
-plt.xticks([1, 2, 4, 8, 16])
+plt.xticks([10, 20, 30, 40, 50])
 # Show the plot
 plt.grid(True)
 # plt.show()
+
+plt.savefig("output_plot.png", dpi=300, bbox_inches='tight')  # saves as PNG with a DPI of 300
