@@ -18,19 +18,25 @@ def get_random_keys(url, num_keys, key_length):
     print(f"Got {num_keys} keys in {end_time - start_time:.2f} seconds, throughput: {throughput:.2f} keys/sec")
 
     
-# with open ("ip.txt", "r") as myfile:
+start = time.time()
 
-#     data=myfile.readlines()[:25]
-#     for line in data:
-#         ip_addr = line.rstrip()
+i = 1;
+with open ("ip.txt", "r") as myfile:
+
+    data=myfile.readlines()[:49]
+    for line in data:
+        ip_addr = line.rstrip()
      
+        print(i)
+        response = requests.post("http://"+ip_addr.split(" ")[2]+":60035/leave")
+        i = i + 1
+        print(response.status_code)
+        print(response.text)
+        # wait(0.5)
 
-#         response = requests.post("http://"+ip_addr.split(" ")[2]+":60021/leave")
-#         print(response.status_code)
-#         print(response.text)
-#         # wait(0.5)
+end = time.time()
 
-
+print(end - start)
 
 
 # response = requests.get("http://172.21.21.181:55550/succ_list")
@@ -57,6 +63,6 @@ def get_random_keys(url, num_keys, key_length):
 #         wait(1)
 
 
-response = requests.get("http://172.21.21.126:60021/storage/7d20658c-87b9-48a0-9624-2fd7d42ece26")
-print(response.status_code)
-print(response.text)
+# response = requests.get("http://172.21.21.126:60021/storage/7d20658c-87b9-48a0-9624-2fd7d42ece26")
+# print(response.status_code)
+# print(response.text)
