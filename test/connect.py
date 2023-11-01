@@ -5,14 +5,14 @@ import time
 import concurrent.futures
 
 # key = input("what key:")
-nprime = "172.21.21.175:60035"
+nprime = "172.21.21.175:60009"
 
 start_time = time.time()
 
 i = 0;
 with open ("ip.txt", "r") as myfile:
     next(myfile)
-    data=myfile.readlines()[:49]
+    data=myfile.readlines()[:48]
 
     for line in data:
         ip_addr = line.rstrip()
@@ -20,8 +20,8 @@ with open ("ip.txt", "r") as myfile:
         print(ip_addr.split(" ")[2])
         print(i)
         # print("http://"+ip_addr.split(" ")[2]+":60021/join?nprime=" + nprime)
-        response = requests.post("http://"+ip_addr.split(" ")[2]+":60035/join?nprime=" + nprime)
-        nprime = ip_addr.split(" ")[2] + ":60035"
+        response = requests.post("http://"+ip_addr.split(" ")[2]+":60009/join?nprime=" + nprime)
+        nprime = ip_addr.split(" ")[2] + ":60009"
         print(response.status_code)
         print(response.text)
         # wait(0.1)

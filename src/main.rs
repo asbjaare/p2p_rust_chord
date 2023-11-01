@@ -1,4 +1,4 @@
-use actix_web::{get, post, put, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{get, post, put, web, App, HttpResponse, HttpServer, Responder, http};
 use actix_rt::spawn;
 use actix_rt::time::interval;
 use serde_derive::{Deserialize, Serialize};
@@ -425,34 +425,24 @@ async fn main() -> std::io::Result<()> {
 
     spawn(async move {
 
-     
-        // loop {
-        //     let previous_node_data_ref = previous_node_data.read().await;
-        //     if !previous_node_data_ref.ip.is_empty() {
-        //         break;
-        //     }
-        //     // Sleep for a short duration so we're not constantly checking
-        //     tokio::time::sleep(Duration::from_millis(100)).await;
-        // }
-    
-        // // Delay for 5 seconds
-        // tokio::time::sleep(Duration::from_secs(5)).await;
+
 
 
         let mut interval = interval(Duration::from_secs(5));
 
         loop {
-            
+
+              interval.tick().await;  
             
             if *joined_network_clone.read().await {
                 // interval.tick().await;
-    
-                tokio::time::sleep(Duration::from_secs(5)).await;
                 let crash_flag_ref = crash_flag_clone.read().await;
     
                 if crash_flag_ref.load(Ordering::Relaxed) {
                     continue;
                 }
+    
+                // tokio::time::sleep(Duration::from_secs(5)).await;
 
                 let mut finger_table_ref = finger_table_data.write().await;
                 let succ_node_ip = finger_table_ref[0].1.ip.clone();
@@ -503,6 +493,7 @@ async fn main() -> std::io::Result<()> {
                 }
             }
             else {
+        
             }
         }
     });
@@ -738,26 +729,6 @@ async fn item_get(
             None => HttpResponse::ServiceUnavailable().body("Successor not found"),
         }
 
-        // let succesor =
-        // Node::find_successor_key(hashed_key, finger_table.read().await.clone(), node.id).await;
-
-        // let url = format!("http://{}/storage/{}", succesor.unwrap(), key);
-        // println!("url {:?}", url);
-        // let _res = send_get_request(url).await;
-        // println!("res {:?}", _res);
-
-
-
-        // if let Ok(response) = _res {
-        // if response == "Key not found" {
-        // HttpResponse::NotFound().body("Key not found")
-        // } else {
-        // HttpResponse::Ok().body(response)
-        // }
-
-        // } else {
-        // HttpResponse::InternalServerError().finish()
-        // }
     }
 }
 
@@ -864,7 +835,11 @@ async fn post_join_ring(
 
     let url = format!("http://{}/succesor/{}", query.nprime, node_ref.ip);
 
+    println!("Debug1")
+;
     let res = send_get_request(url).await;
+
+    println!("Debug2");
 
     let successor = res.unwrap();
     let succesor_id = Node::hash_function(successor.clone());
@@ -893,6 +868,8 @@ async fn post_join_ring(
     let url = format!("http://{}/neighbors", successor);
     let res = send_get_request(url).await;
 
+    println!("debug3");
+
     let neighbors: Vec<String> = serde_json::from_str(&res.unwrap()).unwrap();
 
     // println!("neighbors {:?}", neighbors);
@@ -915,6 +892,7 @@ async fn post_join_ring(
     let url = format!("http://{}/notify_succ/{}", successor, node_ref.ip);
     let res = send_put_request_with_list(url, succ_list_ref.to_vec()).await;
 
+    println!("debug4");
 
     succ_list_ref.clear();
     succ_list_ref.clone_from(&res.unwrap());
@@ -954,6 +932,7 @@ async fn post_leave(
     previous_node_data: web::Data<Arc<RwLock<NodePrev>>>,
     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
     joined_network: web::Data<Arc<RwLock<bool>>>,
+    succ_list: web::Data<Arc<RwLock<Vec<SuccListNode>>>>,
 ) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
         return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
@@ -961,6 +940,7 @@ async fn post_leave(
     let mut node_ref = node_data.write().await;
     let mut finger_table_ref = finger_table.write().await;
     let mut prev_node_ref = previous_node_data.write().await;
+    let mut succ_list_ref = succ_list.write().await;
 
     if prev_node_ref.ip.is_empty() {
         return HttpResponse::Ok().body("node is not in the ring");
@@ -973,6 +953,9 @@ async fn post_leave(
     node_ref.resp_keys.clear();
     node_ref.resp_keys = (0..CLUSTER_SIZE).collect();
 
+    succ_list_ref.clear();
+    succ_list_ref.push(SuccListNode{id: node_ref.id, ip: node_ref.ip.clone()});
+
     let url = format!("http://{}/notify_succ_leave", finger_table_ref[0].1.ip);
 
     let mut leaving_node_list = Vec::new();
@@ -983,12 +966,33 @@ async fn post_leave(
         leaving_node: node_ref.ip.clone(),
     };
 
-    let _res = send_put_request_json_succ_leave(url, info).await;
+    let res = send_put_request_json_succ_leave(url, info).await;
+
+    println!("res {:?}", res);
+
+    match &res {
+        Ok(vec) => {
+            if vec[0].ip == finger_table_ref[0].1.ip {
+                for finger in finger_table_ref.iter_mut() {
+                    finger.1.id = node_ref.id;
+                    finger.1.ip = node_ref.ip.clone();
+                }
+            
+                prev_node_ref.ip = "".to_string();
+                prev_node_ref.id = 0;
+                HttpResponse::Ok().body("node left");
+            }   
+           
+        },
+        Err(e) => {
+            // Handle the error here
+        }
+    }
 
     let info_succ = SuccQuery {
         new_succesor: finger_table_ref[0].1.ip.clone(),
         leaving_node: leaving_node_list,
-        succ_list_node: _res.unwrap(),
+        succ_list_node: res.unwrap(),
     };
 
     let url = format!("http://{}/notify_pred_leave", prev_node_ref.ip);
@@ -1054,44 +1058,7 @@ async fn update_node_and_predecessor(
     node_ref.resp_keys.clear();
     Node::fill_hashmap(&mut node_ref, prev_node_ref.id, node_ref_id).await;
 }
-//OLD VERSION
-// #[put("/notify_succ_leave")]
-// async fn put_notify_succ_leave(
-//     info: web::Json<LeaveQuery>,
-//     node_data: web::Data<Arc<RwLock<Node>>>,
-//     finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>,
-//     previous_node_data: web::Data<Arc<RwLock<NodePrev>>>,
-//     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
-//     succ_list: web::Data<Arc<RwLock<Vec<SuccListNode>>>>,
-// ) -> impl Responder {
-//     if crash_flag.read().await.load(Ordering::Relaxed) {
-//         return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
-//     }
-//     let mut node_ref = node_data.write().await;
-//     // let finger_table_ref = finger_table.write().await;
-//     let mut prev_node_ref = previous_node_data.write().await;
-//     let  succ_list_ref = succ_list.write().await;
 
-//     let node_ref_id = node_ref.id;
-//     // let leaving_node_id = Node::hash_function(info.leaving_node.clone());
-
-//     prev_node_ref.id = Node::hash_function(info.predecessor.clone());
-//     prev_node_ref.ip = info.predecessor.clone();
-
-//     node_ref.resp_keys.clear();
-//     Node::fill_hashmap(&mut node_ref, prev_node_ref.id, node_ref_id).await;
-
-//     // for finger in finger_table_ref.iter_mut() {
-//     //     if finger.1.id == leaving_node_id {
-//     //         finger.1.id = node_ref.id;
-//     //         finger.1.ip = node_ref.ip.clone();
-//     //     }
-//     // }
-
-
-
-//     HttpResponse::Ok().json(succ_list_ref.to_vec())
-// }
 
 /// Handles PUT requests to notify the predecessor node of a leaving node in the Chord protocol.
 ///
@@ -1174,75 +1141,7 @@ fn update_finger_table_pred_leave(
     }
 }
 
-//OLD VERSION
-// #[put("/notify_pred_leave")]
-// async fn put_notify_pred_leave(
-//     mut info: web::Json<SuccQuery>,
-//     node_data: web::Data<Arc<RwLock<Node>>>,
-//     finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>,
-//     previous_node_data: web::Data<Arc<RwLock<NodePrev>>>,
-//     crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,
-//     SuccListNode: web::Data<Arc<RwLock<Vec<SuccListNode>>>>,
-// ) -> impl Responder {
-//     if crash_flag.read().await.load(Ordering::Relaxed) {
-//         return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
-//     }
-//     let node_ref = node_data.write().await;
-//     let mut finger_table_ref = finger_table.write().await;
-//     let prev_node_ref = previous_node_data.write().await;
 
-//     let _node_ref_id = node_ref.id;
-
-//     // let mut leaving_node_ids = Vec::new();
-    
-
-//     // for nodes in info.leaving_node.clone() {
-//     //    leaving_node_ids.push(Node::hash_function(nodes.clone()));
-//     // }
-
-//     let new_succ = Node::new(
-//         Node::hash_function(info.new_succesor.clone()),
-//         info.new_succesor.clone(),
-//     );
-
-//     let mut succ_list_ref = SuccListNode.write().await;
-//     let  new_list = info.succ_list_node.clone();
-
-//     succ_list_ref.clear();
-//     succ_list_ref.clone_from(&new_list);
-//     if succ_list_ref.len() == KEY_SIZE as usize {
-//         succ_list_ref.pop();
-//         succ_list_ref.insert(0, SuccListNode{id: new_succ.id, ip: new_succ.ip.clone()});
-//     }
-//     else {
-//         succ_list_ref.insert(0, SuccListNode{id: new_succ.id, ip: new_succ.ip.clone()});
-//     }
-
-//     info.succ_list_node.clear();
-//     info.succ_list_node.clone_from(&succ_list_ref);
-    
-//     for (_i, finger) in finger_table_ref.iter_mut().enumerate() {
-
-//         for leave in info.leaving_node.clone() {
-//             if finger.1.ip == leave {
-//                 finger.1.id = new_succ.id;
-//                 finger.1.ip = new_succ.ip.clone();
-//             }
-//         }
-        
-        
-//     }
-
-
-//     if new_succ.id == node_ref.id {
-//         HttpResponse::Ok().body("ok")
-//     } else {
-       
-//         let url = format!("http://{}/notify_pred_leave", prev_node_ref.ip);
-//         let _res = send_put_request_json_pred_leave(url, info.into_inner()).await;
-//         HttpResponse::Ok().body("ok")
-//     }
-// }
 
 /// Retrieves the successor of a given node based on its IP address.
 ///
