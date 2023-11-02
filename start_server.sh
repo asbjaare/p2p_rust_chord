@@ -4,7 +4,7 @@
 local_ip=$(hostname -I | awk '{print $1}')
 
 echo "Starting Rust server on $local_ip"
-cd $PWD && target/release/chord $1 $2 &>/dev/null &
+cd $PWD && target/release/chord $1 $2 &
 
 # Read IP addresses from ip.txt file
 while read -r line || [[ -n "$line" ]]; do
@@ -19,7 +19,5 @@ while read -r line || [[ -n "$line" ]]; do
 	fi
 
 	echo "Starting Rust server on $node"
-	ssh $node "cd $PWD && target/release/chord $1 $2 &>/dev/null" &
+	ssh $node "cd $PWD && target/release/chord $1 $2" &
 done < <(head -n $1 ip.txt)
-
-echo "Done starting servers"

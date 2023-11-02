@@ -21,5 +21,3 @@ while read -r line || [[ -n "$line" ]]; do
 	echo "Starting Rust server on $node"
 	ssh $node "cd $PWD && ../target/release/chord $1 $2" &
 done < <(head -n $1 ip.txt)
-
-wait

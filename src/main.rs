@@ -1,4 +1,4 @@
-use actix_web::{get, post, put, web, App, HttpResponse, HttpServer, Responder, http};
+use actix_web::{get, post, put, web, App, HttpResponse, HttpServer, Responder};
 use actix_rt::spawn;
 use actix_rt::time::interval;
 use serde_derive::{Deserialize, Serialize};
@@ -427,7 +427,7 @@ async fn main() -> std::io::Result<()> {
                 // Start of critical section
                 {
                     // get the node's successor
-                    let mut finger_table_ref = finger_table_data.write().await;
+                    let finger_table_ref = finger_table_data.write().await;
                     succ_node_ip = finger_table_ref[0].1.ip.clone();
                     succ_node_id = finger_table_ref[0].1.id;
                    
@@ -463,7 +463,7 @@ async fn main() -> std::io::Result<()> {
                             let res = send_put_request_with_list(url, succ_list_ref.to_vec()).await;
                             
                             // If the notification was successful
-                            if let Ok(new_succ_node) = res {
+                            if let Ok(_new_succ_node) = res {
                             // Remove the crashed from the successor list
                                 succ_list_ref.retain(|node| !leaving_list.contains(&node.ip));
 
@@ -483,7 +483,7 @@ async fn main() -> std::io::Result<()> {
                                     finger_table_ref[0].1.ip = succesor.ip.clone();
                                     finger_table_ref[0].1.id = succesor.id;
     
-                                    for (i, finger) in finger_table_ref.iter_mut().enumerate() {
+                                    for (_i, finger) in finger_table_ref.iter_mut().enumerate() {
                                      
                                    
                                         for leave in leaving_list.clone() {
@@ -610,7 +610,7 @@ async fn main() -> std::io::Result<()> {
 
 
 #[get("/check_alive")]
-async fn get_check_pred(crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,  node_data: web::Data<Arc<RwLock<Node>>>,
+async fn get_check_pred(crash_flag: web::Data<Arc<RwLock<AtomicBool>>>,  _node_data: web::Data<Arc<RwLock<Node>>>,
     finger_table: web::Data<Arc<RwLock<Vec<(u32, Node)>>>>,   succ_list: web::Data<Arc<RwLock<Vec<SuccListNode>>>>,) -> impl Responder {
     if crash_flag.read().await.load(Ordering::Relaxed) {
         return HttpResponse::ServiceUnavailable().body("Node is simulating a crash");
@@ -1059,7 +1059,7 @@ async fn post_leave(
             }   
            
         },
-        Err(e) => {
+        Err(_e) => {
             // Handle the error here
         }
     }
@@ -1192,7 +1192,7 @@ async fn update_successor_list_pred_leave(
     succ_list_node: &web::Data<Arc<RwLock<Vec<SuccListNode>>>>,
 ) {
     let mut succ_list_ref = succ_list_node.write().await;
-    let new_list = info.succ_list_node.clone();
+    let _new_list = info.succ_list_node.clone();
 
     succ_list_ref.retain(|node| !info.leaving_node.contains(&node.ip));
     // succ_list_ref.push(SuccListNode{id: new_succ.id, ip: new_succ.ip.clone()});

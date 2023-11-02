@@ -2,8 +2,13 @@
 
 NB! You should probably compile this before running, look at the section "How to compile" for more information. Alternatively you can run the compiled version of the program, look at the section "How to run the program without doing all that" for more information.
 
-Run the following command in the terminal:
-`./run <number of nodes>`
+Run the following command in a terminal and let this run:
+`./start_server.sh <number of nodes> <port>`
+
+After you need to open another terminal to connect the nodes and run the python file:
+`python3 connect.py`
+Then provide the program with the number of nodes and the port to connect to.
+
 This will run the number of nodes and connect them to each other. It will use the 61021 as the port.
 To stop the program you have to run the following command in the terminal:
 `/share/ifi/cleanup.sh`

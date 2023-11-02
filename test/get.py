@@ -4,7 +4,7 @@ import random
 import time
 
 # key = input("what key:")
-nprime = "172.21.21.175:55552"
+nprime = "172.21.21.175:61021"
 
 def get_random_keys(url, num_keys, key_length):
     start_time = time.time()
@@ -23,12 +23,12 @@ start = time.time()
 i = 1;
 with open ("ip.txt", "r") as myfile:
 
-    data=myfile.readlines()[:10]
+    data=myfile.readlines()[:50]
     for line in data:
         ip_addr = line.rstrip()
      
         print(i)
-        response = requests.post("http://"+ip_addr.split(" ")[2]+":60009/leave")
+        response = requests.post("http://"+ip_addr.split(" ")[2]+":61021/leave")
         i = i + 1
         print(response.status_code)
         print(response.text)
