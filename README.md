@@ -9,7 +9,6 @@ After you need to open another terminal to connect the nodes and run the python 
 `python3 connect.py`
 Then provide the program with the number of nodes and the port to connect to.
 
-This will run the number of nodes and connect them to each other. It will use the 61021 as the port.
 To stop the program you have to run the following command in the terminal:
 `/share/ifi/cleanup.sh`
 And connect again and run the script with the other desired amount of nodes
