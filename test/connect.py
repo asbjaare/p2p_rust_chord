@@ -12,7 +12,7 @@ start_time = time.time()
 i = 0;
 with open ("ip.txt", "r") as myfile:
     next(myfile)
-    data=myfile.readlines()[:48]
+    data=myfile.readlines()[:49]
 
     for line in data:
         ip_addr = line.rstrip()
