@@ -1,17 +1,18 @@
-use serde_derive::Serialize;
+
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
 use std::fs;
 use std::hash::{Hash, Hasher};
+use serde_derive::{Deserialize, Serialize};
 
 
 const KEY_SIZE: u32 = 20;
 const CLUSTER_SIZE: u32 = 2u32.pow(KEY_SIZE);
 
 /// Structure to represent a node in the cluster, with its id, ip and hashmap
-#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize,Deserialize )]
 pub struct Node {
     pub id: u32,
     pub ip: String,
