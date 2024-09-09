@@ -1,3 +1,23 @@
+## How to run the program:
+
+NB! You should probably compile this before running, look at the section "How to compile" for more information. Alternatively you can run the compiled version of the program, look at the section "How to run the program without doing all that" for more information.
+
+Run the following command in a terminal and let this run:
+`./start_server.sh <number of nodes> <port>`
+
+After you need to open another terminal to connect the nodes and run the python file:
+`python3 connect.py`
+Then provide the program with the number of nodes and the port to connect to.
+
+To stop the program you have to run the following command in the terminal:
+`/share/ifi/cleanup.sh`
+And connect again and run the script with the other desired amount of nodes
+
+## Docstrings:
+To generate docstrings you have to run the following command in the terminal:
+`cargo doc --no-deps --open`
+
+
 ## How to compile:
 
 To compile this rust program you need to have rust installed on your computer. You can install rust by following the instructions on the [rust website](https://www.rust-lang.org/tools/install). But you also need rustup and have rustc 1.72 or higher installed.
